@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: hero-demon-game
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run server
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.14.0
+      - key: FRONTEND_ORIGIN
+        value: https://protossprobe.github.io
