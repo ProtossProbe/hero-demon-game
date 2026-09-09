@@ -22,7 +22,6 @@ test('two players: hidden staging, automatic resolution, joint next, thumbnails 
     return (await c.timeout(2000).emitWithAck(event, data)) as Reply;
   }
   function ok(reply: Reply) {
-    assert.equal(reply.ok, true, JSON.stringify(reply));
     if (!reply.ok) throw Error(reply.error);
     return reply;
   }

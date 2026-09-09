@@ -3,6 +3,7 @@ services:
     name: hero-demon-game
     runtime: node
     plan: free
+    region: singapore
     buildCommand: npm ci
     startCommand: npm run server
     healthCheckPath: /health
@@ -10,4 +11,4 @@ services:
       - key: NODE_VERSION
         value: 24.14.0
       - key: FRONTEND_ORIGIN
-        value: https://protossprobe.github.io
+        value: https://protossprobe.github.io,https://probe.earth,https://www.probe.earth
