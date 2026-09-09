@@ -24,7 +24,7 @@ npm run build
 
 ## 在线部署
 
-Render Web Service 使用此仓库 main 分支；Build Command 为 `npm ci`，Start Command 为 `npm run server`，Free 实例。环境变量 `NODE_VERSION=24.14.0`、`FRONTEND_ORIGIN=https://protossprobe.github.io`。健康检查 `/health`，端口自动使用 Render 的 PORT。也可使用 render.yaml Blueprint。
+Render Web Service 使用此仓库 main 分支；Build Command 为 `npm ci`，Start Command 为 `npm run server`，Free 实例。环境变量 `NODE_VERSION=24.14.0`、`FRONTEND_ORIGIN=https://protossprobe.github.io,https://probe.earth,https://www.probe.earth`。健康检查 `/health`，端口自动使用 Render 的 PORT。也可使用 render.yaml Blueprint。
 
 GitHub Pages 来源设置为 GitHub Actions。仓库 Actions 变量 `SERVER_URL` 设置为 Render 的 HTTPS 服务地址。推送 main 或手动运行 Publish game 工作流，发布 dist。
 
@@ -49,3 +49,6 @@ GitHub Pages 来源设置为 GitHub Actions。仓库 Actions 变量 `SERVER_URL`
 客户端发送 room:create、room:join、room:resume 和 game:action；服务器发送 room:state。动作包含 READY、DRAW_ALL、DRAW、PLAY、WITHDRAW、LOCK、TARGET、NEXT。每次动作携带 gameId/month/turn，过期操作被拒绝。双方下一回合和重开使用独立准备标记。GET /health 用于健康检查。
 
 血量初始 20，可为负；净得分恒等于勇者血量减魔王血量。连续第 N 次 Boss 对决在伤害后交换 N−1 次。立即胜利优先于第 12 月血量比较。完整八项规则见页面可点击矩阵和独立引擎测试。
+
+发布地址：https://probe.earth/hero-demon-game/
+后端：https://hero-demon-game.onrender.com

@@ -33,7 +33,7 @@ export function PlayingCard({
       <small>{hidden ? 'VARIATION' : card.role}</small>
       <strong>{hidden ? '◆' : symbols[card.role]}</strong>
       <span>{hidden ? '隐藏手牌' : names[card.role]}</span>
-      {!hidden && <small>{card.id}</small>}
+      {!hidden && <small title={card.id}>{card.id.length > 12 ? card.id.slice(0, 6) : card.id}</small>}
     </button>
   );
 }
