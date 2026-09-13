@@ -7,6 +7,7 @@ import {
   ruleFor,
   targets,
   randomCard,
+  citizenCounts,
   type State,
   type Role,
 } from '../lib/game/engine.ts';
@@ -72,30 +73,69 @@ test('conversion persists across months', () => {
     true,
   );
 });
-test('streak 2,3,4 swaps N-1 times after damage; negative HP allowed', () => {
+test('blood moon starts next month and always swaps exactly once after damage', () => {
   let s = newGame();
-  s.hp = { hero: 7, demon: 18 };
+  s.hp = { hero: 30, demon: 40 };
   for (let i = 1; i <= 4; i++) {
-    const old = { ...s.hp };
+    assert.equal(s.bloodMoon, i > 1);
+    const before = { ...s.hp };
     s = lockBoth(duel('HERO', 'DEMON', s));
     assert.deepEqual(
       s.hp,
-      (i - 1) % 2 === 0
-        ? { hero: old.hero, demon: old.demon - 5 }
-        : { hero: old.demon - 5, demon: old.hero },
+      i === 1
+        ? { hero: before.hero, demon: before.demon - 5 }
+        : { hero: before.demon - 5, demon: before.hero },
     );
-    assert.equal(s.bossStreak, i);
+    assert.equal(s.last!.swapCount, i === 1 ? 0 : 1);
     assert.equal(s.score, s.hp.hero - s.hp.demon);
     if (i < 4) s = transition(s, { type: 'NEXT' });
   }
+});
+test('blood moon lasts whole month and expires after a non-duel month', () => {
+  let s = transition(lockBoth(duel('HERO', 'DEMON')), { type: 'NEXT' });
+  s = lockBoth(duel('GOOD', 'GOOD', s));
+  assert.equal(s.bloodMoon, true);
+  assert.equal(s.last!.swapped, false);
+  s = transition(s, { type: 'NEXT' });
+  assert.equal(s.bloodMoon, true);
+  s = lockBoth(duel('HERO', 'GOOD', s));
+  assert.equal(s.bloodMoon, true);
+  s = transition(s, { type: 'NEXT' });
+  assert.equal(s.bloodMoon, false);
+});
+for (const hp of [5, 4])
+  test(`lethal demon damage at ${hp} HP skips blood moon swap`, () => {
+    let s = newGame();
+    s.bloodMoon = true;
+    s.hp = { hero: 20, demon: hp };
+    s = lockBoth(duel('HERO', 'DEMON', s));
+    assert.deepEqual(s.hp, { hero: 20, demon: hp - 5 });
+    assert.equal(s.winner, 'hero');
+    assert.equal(s.winReason, 'health');
+    assert.equal(s.last!.swapped, false);
+    assert.equal(s.phase, 'finished');
+  });
+test('blood moon nonlethal demon damage happens before swap', () => {
+  let s = newGame();
+  s.bloodMoon = true;
+  s.hp = { hero: 20, demon: 6 };
+  s = lockBoth(duel('HERO', 'DEMON', s));
+  assert.deepEqual(s.hp, { hero: 1, demon: 20 });
   assert.equal(s.winner, null);
 });
-test('non-boss month ending breaks streak', () => {
-  let s = newGame();
-  s.bossStreak = 3;
-  s = lockBoth(duel('HERO', 'GOOD', s));
-  assert.equal(s.bossStreak, 0);
-});
+for (const hp of [3, 2])
+  test(`hero at ${hp} HP dies before all-good victory`, () => {
+    let s = newGame();
+    s.hp.hero = hp;
+    s.cards.forEach((c) => {
+      if (c.role === 'EVIL') c.role = 'GOOD';
+    });
+    s.cards.find((c) => c.id === 'demon-3')!.role = 'EVIL';
+    s = lockBoth(duel('HERO', 'EVIL', s));
+    assert.equal(s.winner, 'demon');
+    assert.equal(s.winReason, 'health');
+    assert.equal(s.hp.hero, hp - 3);
+  });
 test('good victory counts citizens in every zone', () => {
   let s = newGame();
   s.cards.forEach((c) => {
@@ -174,7 +214,7 @@ test('100 complete random games preserve cards, bosses, hand limits and terminat
 test('second boss duel reverses post-damage score and month 12 winner', () => {
   let s = newGame();
   s.month = 12;
-  s.bossStreak = 1;
+  s.bloodMoon = true;
   s.hp = { hero: 20, demon: 15 };
   s.score = 5;
   s = lockBoth(duel('HERO', 'DEMON', s));
@@ -184,24 +224,24 @@ test('second boss duel reverses post-damage score and month 12 winner', () => {
 });
 test('targeting, target selection and next month all preserve health-difference score', () => {
   let s = newGame();
-  s.hp = { hero: -4, demon: 2 };
+  s.hp = { hero: 4, demon: 2 };
   s.score = 100;
   s = lockBoth(duel('EVIL', 'DEMON', s));
   assert.equal(s.phase, 'targeting');
-  assert.equal(s.score, -7);
+  assert.equal(s.score, 1);
   s = transition(s, { type: 'TARGET', cardId: targets(s)[0].id });
-  assert.equal(s.score, -7);
+  assert.equal(s.score, 1);
   s = transition(s, { type: 'NEXT' });
-  assert.equal(s.score, -7);
+  assert.equal(s.score, 1);
 });
 test('immediate victory takes priority over opposing health advantage', () => {
   let s = newGame();
-  s.hp = { hero: -20, demon: 40 };
+  s.hp = { hero: 2, demon: 40 };
   s.cards.forEach((c) => {
     if (c.role === 'EVIL') c.role = 'GOOD';
   });
   s = lockBoth(duel('GOOD', 'GOOD', s));
-  assert.equal(s.score, -59);
+  assert.equal(s.score, -37);
   assert.equal(s.winner, 'hero');
   assert.equal(s.phase, 'finished');
 });
@@ -269,4 +309,22 @@ test('converted discards persist through next turn and are not playable', () => 
       transition(s, { type: 'PLAY', side: card.owner, cardId: card.id }),
     );
   }
+});
+
+test('citizen counts track transformed discards and ownership across months', () => {
+  let s = lockBoth(duel('GOOD', 'EVIL'));
+  assert.deepEqual(citizenCounts(s), {
+    hero: { good: 1, evil: 3 },
+    demon: { good: 3, evil: 1 },
+  });
+  s = transition(s, { type: 'NEXT' });
+  assert.deepEqual(citizenCounts(s), {
+    hero: { good: 1, evil: 3 },
+    demon: { good: 3, evil: 1 },
+  });
+  s = lockBoth(duel('HERO', 'EVIL', s));
+  assert.deepEqual(citizenCounts(s), {
+    hero: { good: 1, evil: 3 },
+    demon: { good: 4, evil: 0 },
+  });
 });

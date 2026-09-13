@@ -217,6 +217,7 @@ function Online() {
             nextReady: view.nextReady[view.me],
             rematchReady: view.ready[view.me],
             targetOptions: view.targetOptions,
+            citizenCounts: view.citizenCounts,
             drawAll: () => action({ type: 'DRAW_ALL' }),
           }}
         />

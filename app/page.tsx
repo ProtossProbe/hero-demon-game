@@ -1,12 +1,13 @@
 import { GameResult } from '../components/game-result';
 import { useHandOrder } from '../hooks/use-hand-order';
 import { MonthNotice } from '../components/month-notice';
-import { transition, targets, names } from '../lib/game/engine';
+import { transition, targets, names, citizenCounts } from '../lib/game/engine';
 import { PlayingCard } from '../components/playing-card';
 import { RuleTable } from '../components/rule-table';
 import { useLocalGame } from '../hooks/use-local-game';
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 type Online = {
+  citizenCounts: ReturnType<typeof citizenCounts>;
   roomId: string;
   nextReady: boolean;
   rematchReady: boolean;
@@ -42,9 +43,20 @@ export default function GameBoard({
     (c) => c.owner === computer && c.zone === 'hand',
   );
 
+  const counts = online?.citizenCounts ?? citizenCounts(state);
+  const counter = (side: typeof me) => (
+    <span
+      className="citizen-count"
+      aria-label={`${side === 'hero' ? '勇者' : '魔王'}牌库：${counts[side].good}善/${counts[side].evil}恶`}
+      title="完整牌库，包含手牌、战场与弃牌"
+    >
+      <span className="count-good">{counts[side].good}善</span>/
+      <span className="count-evil">{counts[side].evil}恶</span>
+    </span>
+  );
   const playing = state.phase === 'playing';
   return (
-    <div className="app">
+    <div className={`app ${state.bloodMoon ? 'blood-moon' : ''}`}>
       <GameResult
         state={state}
         me={me}
@@ -101,10 +113,8 @@ export default function GameBoard({
               </b>
             </div>
             <div>
-              <small>连续 Boss 对决</small>
-              <b>
-                {state.bossStreak} <span>个月</span>
-              </b>
+              <small>本月环境</small>
+              <b>{state.bloodMoon ? '血月' : '普通月'}</b>
             </div>
           </div>
           <section className="arena">
@@ -123,8 +133,10 @@ export default function GameBoard({
             <MonthNotice
               key={`opponent-${gameId}-${state.month}`}
               month={state.month}
+              bloodMoon={state.bloodMoon}
             />
             <div className="hand opponent">
+              {counter(computer)}
               {opponent.map((c) => (
                 <PlayingCard card={c} key={c.id} hidden />
               ))}
@@ -164,10 +176,7 @@ export default function GameBoard({
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={drop('PLAY')}
               >
-                <small>
-                  我方 · {state.locked[me] ? '已锁定' : '可换牌'} · 换牌{' '}
-                  {state.changes[me]} 次
-                </small>
+                <small>我方 · {state.locked[me] ? '已锁定' : '可换牌'}</small>
                 {state.battle[me] ? (
                   <PlayingCard
                     action={
@@ -202,13 +211,12 @@ export default function GameBoard({
                     ? '已亮牌'
                     : state.locked[me]
                       ? '等待对方锁定'
-                      : '自由选择出牌'}
+                      : ''}
                 </span>
               </div>
               <div className="battle-slot">
                 <small>
-                  对方 · {state.locked[computer] ? '已锁定' : '可换牌'} · 换牌{' '}
-                  {state.changes[computer]} 次
+                  对方 · {state.locked[computer] ? '已锁定' : '可换牌'}
                 </small>
                 {state.battle[computer] ? (
                   <PlayingCard
@@ -316,6 +324,7 @@ export default function GameBoard({
             <MonthNotice
               key={`own-${gameId}-${state.month}`}
               month={state.month}
+              bloodMoon={state.bloodMoon}
             />
             <p className="hand-instruction">
               拖动手牌可排序；拖到战场可换牌，点击战场卡牌或拖回手牌可撤回。
@@ -325,6 +334,7 @@ export default function GameBoard({
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => dropOnHand(e)}
             >
+              {counter(me)}
               {hand.map((c) => (
                 <div
                   className="hand-card"
@@ -414,8 +424,9 @@ export default function GameBoard({
             </p>
           )}
           <div className="assumption">
-            双方初始 20 血，血量可为负，0 血不判负。净得分始终等于勇者血量 −
-            魔王血量。伤害与回血先结算，再互换血量。12
+            双方初始 20 血，任一方血量降至 0
+            或以下立即失败。净得分始终等于勇者血量 − 魔王血量。上个月双方 Boss
+            对决，本月即为血月；魔王先受伤害，存活时再互换一次血量。12
             月后按勇者净得分判断胜负，市民转换永久保留。
           </div>
           <section className="history">

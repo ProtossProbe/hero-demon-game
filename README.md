@@ -48,7 +48,9 @@ GitHub Pages 来源设置为 GitHub Actions。仓库 Actions 变量 `SERVER_URL`
 
 客户端发送 room:create、room:join、room:resume 和 game:action；服务器发送 room:state。动作包含 READY、DRAW_ALL、DRAW、PLAY、WITHDRAW、LOCK、TARGET、NEXT。每次动作携带 gameId/month/turn，过期操作被拒绝。双方下一回合和重开使用独立准备标记。GET /health 用于健康检查。
 
-血量初始 20，可为负；净得分恒等于勇者血量减魔王血量。连续第 N 次 Boss 对决在伤害后交换 N−1 次。立即胜利优先于第 12 月血量比较。完整八项规则见页面可点击矩阵和独立引擎测试。
+血量初始 20，任一方降至 0 或以下立即失败；净得分恒等于勇者血量减魔王血量。上个月勇者与魔王对决，则本月为血月。血月中魔王先受伤害，存活时双方再交换一次血量；伤害致死直接判负，不互换。血量判负优先于阵营胜利和第 12 月血量比较。完整八项规则见页面可点击矩阵和独立引擎测试。
 
 发布地址：https://probe.earth/hero-demon-game/
 后端：https://hero-demon-game.onrender.com
+
+双方手牌栏显示完整牌库的善/恶计数（含战场与弃牌），按转换后的类型与归属实时更新。在线卡牌采用 hero-0…hero-4 / demon-0…demon-4 的稳定编号；隐藏牌仍使用临时占位编号，避免暴露身份。

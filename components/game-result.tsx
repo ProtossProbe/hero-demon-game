@@ -28,7 +28,9 @@ export function GameResult({
       ? '所有市民均已感化为善良市民'
       : state.winReason === 'evil'
         ? '所有市民均已腐化为邪恶市民'
-        : null;
+        : state.winReason === 'health'
+          ? `${state.winner === 'hero' ? '大魔王' : '勇者'}血量降至 0 或以下`
+          : null;
   const score = netScore(state);
   return (
     <Dialog open={finished}>

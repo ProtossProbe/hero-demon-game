@@ -34,7 +34,7 @@ export const rules = [
     roles: ['HERO', 'DEMON'],
     value: 5,
     effect:
-      '魔王受到 5 点伤害；本月结束；连续第 N 个月 Boss 对决，结算后互换 N−1 次血量。',
+      '魔王受到 5 点伤害；本月结束；下个月为血月。血月中先扣除魔王的伤害，再互换一次血量；伤害致死则立即结束，不互换。',
   },
   { roles: ['HERO', 'GOOD'], value: 0, effect: '无市民转换；本月结束。' },
   { roles: ['GOOD', 'GOOD'], value: 1, effect: '勇者回复 1 点血量。' },
@@ -67,12 +67,13 @@ export type State = {
   hp: Record<Side, number>;
   /** 派生值：始终等于勇者血量减魔王血量。 */
   score: number;
-  bossStreak: number;
+  bloodMoon: boolean;
+  bossDuelThisMonth: boolean;
   phase: 'playing' | 'targeting' | 'resolved' | 'finished';
   revealed: boolean;
   monthEnded: boolean;
   winner: Side | 'draw' | null;
-  winReason?: 'good' | 'evil' | 'months';
+  winReason?: 'good' | 'evil' | 'months' | 'health';
   battle: Partial<Record<Side, string>>;
   locked: Record<Side, boolean>;
   changes: Record<Side, number>;
@@ -113,7 +114,8 @@ export function newGame(): State {
     totalMonths: 12,
     hp: { hero: 20, demon: 20 },
     score: 0,
-    bossStreak: 0,
+    bloodMoon: false,
+    bossDuelThisMonth: false,
     phase: 'playing',
     revealed: false,
     monthEnded: false,
@@ -135,8 +137,18 @@ export function netScore(s: Pick<State, 'hp'>): number {
 function finish(s: State) {
   s.score = netScore(s);
   const citizens = s.cards.filter((c) => !boss(c.role));
-  if (citizens.every((c) => c.role === 'GOOD')) { s.winner = 'hero'; s.winReason = 'good'; }
-  if (citizens.every((c) => c.role === 'EVIL')) { s.winner = 'demon'; s.winReason = 'evil'; }
+  if (s.hp.hero <= 0 || s.hp.demon <= 0) {
+    s.winner = s.hp.hero <= 0 ? 'demon' : 'hero';
+    s.winReason = 'health';
+  }
+  if (!s.winner && citizens.every((c) => c.role === 'GOOD')) {
+    s.winner = 'hero';
+    s.winReason = 'good';
+  }
+  if (!s.winner && citizens.every((c) => c.role === 'EVIL')) {
+    s.winner = 'demon';
+    s.winReason = 'evil';
+  }
   if (!s.winner && s.monthEnded && s.month === s.totalMonths) {
     s.winner = s.score > 0 ? 'hero' : s.score < 0 ? 'demon' : 'draw';
     s.winReason = 'months';
@@ -198,6 +210,8 @@ export function transition(input: State, command: Command): State {
   if (command.type === 'NEXT') {
     if (s.phase !== 'resolved') throw new Error('请先亮牌并完成结算');
     if (s.monthEnded) {
+      s.bloodMoon = s.bossDuelThisMonth;
+      s.bossDuelThisMonth = false;
       s.month++;
       s.turn = 1;
       // 洗牌只改变顺序，身份、归属和转换永久保留。
@@ -205,7 +219,10 @@ export function transition(input: State, command: Command): State {
         const j = Math.floor(Math.random() * (i + 1));
         [s.cards[i], s.cards[j]] = [s.cards[j], s.cards[i]];
       }
-      s.cards.forEach((c) => { c.zone = 'hand'; delete c.discardedTurn; });
+      s.cards.forEach((c) => {
+        c.zone = 'hand';
+        delete c.discardedTurn;
+      });
     } else s.turn++;
     s.phase = 'playing';
     s.revealed = false;
@@ -255,23 +272,22 @@ export function transition(input: State, command: Command): State {
   h.zone = d.zone = 'discard';
   h.discardedTurn = d.discardedTurn = s.turn;
   s.monthEnded = boss(hr) || boss(dr) || s.turn === 5;
-  if (s.monthEnded) {
-    if (hr === 'HERO' && dr === 'DEMON') {
-      s.bossStreak++;
-      if (s.bossStreak >= 2) {
-        s.last.swapCount = s.bossStreak - 1;
-        for (let i = 0; i < s.last.swapCount; i++)
-          [s.hp.hero, s.hp.demon] = [s.hp.demon, s.hp.hero];
-        s.last.swapped = true;
-        s.last.effects.push(
-          `连续 ${s.bossStreak} 次 Boss 对决，实际互换 ${s.last.swapCount} 次血量。`,
-        );
-      }
-    } else s.bossStreak = 0;
+  if (hr === 'HERO' && dr === 'DEMON') {
+    s.bossDuelThisMonth = true;
+    if (s.bloodMoon && s.hp.hero > 0 && s.hp.demon > 0) {
+      const afterDamage = { ...s.hp };
+      [s.hp.hero, s.hp.demon] = [s.hp.demon, s.hp.hero];
+      s.last.swapped = true;
+      s.last.swapCount = 1;
+      s.last.effects.push(
+        `血月：魔王先受 5 点伤害（勇者 ${afterDamage.hero} / 魔王 ${afterDamage.demon}），再互换一次血量（勇者 ${s.hp.hero} / 魔王 ${s.hp.demon}）。`,
+      );
+    }
   }
   // 先伤害/回血，再执行全部互换，最后计算净得分（包括等待选目标阶段）。
   s.score = netScore(s);
-  if (hr === 'EVIL' && dr === 'DEMON' && targets(s).length)
+  if (s.hp.hero <= 0 || s.hp.demon <= 0) finish(s);
+  else if (hr === 'EVIL' && dr === 'DEMON' && targets(s).length)
     s.phase = 'targeting';
   else finish(s);
   return s;
@@ -284,4 +300,17 @@ export interface GameTransport {
 export function randomCard(s: State, side: Side): Card | undefined {
   const hand = s.cards.filter((c) => c.owner === side && c.zone === 'hand');
   return hand[Math.floor(Math.random() * hand.length)];
+}
+
+/** 统计完整牌库，计入结算后的转换与交换归属。 */
+export function citizenCounts(
+  s: Pick<State, 'cards'>,
+): Record<Side, { good: number; evil: number }> {
+  const result = { hero: { good: 0, evil: 0 }, demon: { good: 0, evil: 0 } };
+  for (const c of s.cards) {
+    if (c.hidden) continue;
+    if (c.role === 'GOOD') result[c.owner].good++;
+    if (c.role === 'EVIL') result[c.owner].evil++;
+  }
+  return result;
 }

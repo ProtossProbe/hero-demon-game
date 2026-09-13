@@ -1,9 +1,10 @@
 import { createServer } from 'node:http';
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { Server, type Socket } from 'socket.io';
 import {
   newGame,
+  citizenCounts,
   transition,
   targets,
   type Side,
@@ -55,6 +56,7 @@ export function project(room: Room, me: Side): RoomView {
     ready: { ...room.ready },
     nextReady: { ...room.nextReady },
     state,
+    citizenCounts: citizenCounts(room.state),
     targetOptions:
       me === 'demon' && room.state.phase === 'targeting'
         ? targets(room.state)
@@ -75,7 +77,7 @@ export function createGameServer(
   const http = createServer((req, res) => {
     if (req.url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, service: 'hero-demon', protocol: 1 }));
+      res.end(JSON.stringify({ ok: true, service: 'hero-demon', protocol: 2 }));
     } else {
       res.writeHead(404);
       res.end('Not found');
@@ -227,7 +229,6 @@ export function createGameServer(
           if (room.ready.hero && room.ready.demon) {
             room.state = newGame();
             room.state.cards.forEach((c) => {
-              c.id = randomUUID();
               c.zone = 'hand';
             });
             room.phase = 'active';

@@ -49,6 +49,22 @@ test('two players: hidden staging, automatic resolution, joint next, thumbnails 
     await action(h, hv, { type: 'READY' });
     dv = await action(d, dv, { type: 'READY' });
     const room = server.rooms.get(hv.roomId)!;
+    assert.deepEqual(dv.citizenCounts, {
+      hero: { good: 2, evil: 2 },
+      demon: { good: 2, evil: 2 },
+    });
+    assert.deepEqual(room.state.cards.map((c) => c.id).sort(), [
+      'demon-0',
+      'demon-1',
+      'demon-2',
+      'demon-3',
+      'demon-4',
+      'hero-0',
+      'hero-1',
+      'hero-2',
+      'hero-3',
+      'hero-4',
+    ]);
     // Fetch each server-projected view through a harmless draw-all command.
     hv = await action(h, { ...hv, gameId: dv.gameId }, { type: 'DRAW_ALL' });
     assert.equal(
@@ -114,6 +130,78 @@ test('two players: hidden staging, automatic resolution, joint next, thumbnails 
     );
   } finally {
     clients.forEach((c) => c.disconnect());
+    server.close();
+  }
+});
+
+test('online blood moons sync through six boss duels and lethal damage ends before swapping', async () => {
+  const server = createGameServer();
+  await new Promise<void>((r) => server.http.listen(0, '127.0.0.1', r));
+  const port = (server.http.address() as { port: number }).port;
+  const sockets: Socket[] = [];
+  async function connect() {
+    const c = io(`http://127.0.0.1:${port}`, {
+      transports: ['websocket'],
+      forceNew: true,
+    });
+    sockets.push(c);
+    await new Promise<void>((r) => c.once('connect', () => r()));
+    return c;
+  }
+  async function call(c: Socket, event: string, data: unknown) {
+    const reply = (await c.timeout(2000).emitWithAck(event, data)) as Reply;
+    if (!reply.ok) throw Error(reply.error);
+    return reply.view;
+  }
+  let v: RoomView;
+  async function act(c: Socket, action: RoomAction) {
+    v = await call(c, 'game:action', {
+      gameId: v.gameId,
+      month: v.state.month,
+      turn: v.state.turn,
+      action,
+    });
+  }
+  try {
+    const h = await connect(),
+      d = await connect();
+    v = await call(h, 'room:create', { side: 'hero' });
+    v = await call(d, 'room:join', { roomId: v.roomId });
+    await act(h, { type: 'READY' });
+    await act(d, { type: 'READY' });
+    const expected = [
+      { hero: 20, demon: 15 },
+      { hero: 10, demon: 20 },
+      { hero: 15, demon: 10 },
+      { hero: 5, demon: 15 },
+      { hero: 10, demon: 5 },
+      { hero: 10, demon: 0 },
+    ];
+    for (let month = 1; month <= 6; month++) {
+      assert.equal(v.state.bloodMoon, month > 1);
+      await act(h, { type: 'PLAY', side: 'hero', cardId: 'hero-0' });
+      await act(d, { type: 'PLAY', side: 'demon', cardId: 'demon-0' });
+      await act(h, { type: 'LOCK', side: 'hero' });
+      await act(d, { type: 'LOCK', side: 'demon' });
+      assert.deepEqual(v.state.hp, expected[month - 1]);
+      assert.equal(v.state.last!.swapCount, month > 1 && month < 6 ? 1 : 0);
+      if (month < 6) {
+        await act(h, { type: 'NEXT' });
+        assert.equal(v.state.month, month);
+        await act(d, { type: 'NEXT' });
+      }
+    }
+    assert.equal(v.phase, 'finished');
+    assert.equal(v.state.winner, 'hero');
+    assert.equal(v.state.winReason, 'health');
+    await act(h, { type: 'READY' });
+    assert.equal(v.phase, 'finished');
+    await act(d, { type: 'READY' });
+    assert.equal(v.state.bloodMoon, false);
+    assert.equal(v.state.month, 1);
+    assert.deepEqual(v.state.hp, { hero: 20, demon: 20 });
+  } finally {
+    sockets.forEach((c) => c.disconnect());
     server.close();
   }
 });

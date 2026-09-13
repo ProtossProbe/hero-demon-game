@@ -10,6 +10,7 @@ export type RoomView = {
   ready: Record<Side, boolean>;
   nextReady: Record<Side, boolean>;
   state: State;
+  citizenCounts: Record<Side, { good: number; evil: number }>;
   targetOptions: Card[];
 };
 export type RoomAction = { type: 'READY' } | { type: 'DRAW_ALL' } | Command;
