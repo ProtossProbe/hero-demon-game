@@ -34,7 +34,7 @@ export const rules = [
     roles: ['HERO', 'DEMON'],
     value: 5,
     effect:
-      '魔王受到 5 点伤害；本月结束；下个月为血月。血月中先扣除魔王的伤害，再互换一次血量；血量降至 0 或以下则进入善恶决战，不互换。',
+      '魔王受到 5 点伤害；本月结束；下个月为血月。血月中勇者先回复 5 血、魔王扣除 5 血，再互换一次血量；血量降至 0 或以下则进入善恶决战，不互换。',
   },
   { roles: ['HERO', 'GOOD'], value: 0, effect: '无市民转换；本月结束。' },
   { roles: ['GOOD', 'GOOD'], value: 1, effect: '勇者回复 1 点血量。' },
@@ -293,12 +293,15 @@ export function transition(input: State, command: Command): State {
 
   if (hr === 'HERO' && dr === 'EVIL') s.hp.hero -= 3;
   if (dr === 'DEMON' && (hr === 'GOOD' || hr === 'EVIL')) s.hp.demon += 1;
-  if (hr === 'HERO' && dr === 'DEMON') s.hp.demon -= 5;
+  if (hr === 'HERO' && dr === 'DEMON') {
+    if (s.bloodMoon) s.hp.hero += 5;
+    s.hp.demon -= 5;
+  }
   if (hr === 'GOOD' && dr === 'GOOD') s.hp.hero += 1;
   if (hr === 'EVIL' && dr === 'EVIL') s.hp.hero -= 2;
   s.last = {
     roles: [hr, dr],
-    value: rule.value,
+    value: s.bloodMoon && hr === 'HERO' && dr === 'DEMON' ? 10 : rule.value,
     effects: [rule.effect],
     swapped: false,
     swapCount: 0,
@@ -320,7 +323,7 @@ export function transition(input: State, command: Command): State {
       s.last.swapped = true;
       s.last.swapCount = 1;
       s.last.effects.push(
-        `血月：魔王先受 5 点伤害（勇者 ${afterDamage.hero} / 魔王 ${afterDamage.demon}），再互换一次血量（勇者 ${s.hp.hero} / 魔王 ${s.hp.demon}）。`,
+        `血月：勇者先回复 5 血、魔王受到 5 点伤害（勇者 ${afterDamage.hero} / 魔王 ${afterDamage.demon}），再互换一次血量（勇者 ${s.hp.hero} / 魔王 ${s.hp.demon}）。`,
       );
     }
   }

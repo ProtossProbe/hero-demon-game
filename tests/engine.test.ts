@@ -85,7 +85,7 @@ test('blood moon starts next month and always swaps exactly once after damage', 
       s.hp,
       i === 1
         ? { hero: before.hero, demon: before.demon - 5 }
-        : { hero: before.demon - 5, demon: before.hero },
+        : { hero: before.demon - 5, demon: before.hero + 5 },
     );
     assert.equal(s.last!.swapCount, i === 1 ? 0 : 1);
     assert.equal(s.score, s.hp.hero - s.hp.demon);
@@ -110,7 +110,7 @@ for (const hp of [5, 4])
     s.bloodMoon = true;
     s.hp = { hero: 20, demon: hp };
     s = lockBoth(duel('HERO', 'DEMON', s));
-    assert.deepEqual(s.hp, { hero: 20, demon: hp - 5 });
+    assert.deepEqual(s.hp, { hero: 25, demon: hp - 5 });
     assert.equal(s.winner, null);
     assert.equal(s.armageddon, 'demon');
     assert.equal(s.armageddonPending, true);
@@ -122,7 +122,7 @@ test('blood moon nonlethal demon damage happens before swap', () => {
   s.bloodMoon = true;
   s.hp = { hero: 20, demon: 6 };
   s = lockBoth(duel('HERO', 'DEMON', s));
-  assert.deepEqual(s.hp, { hero: 1, demon: 20 });
+  assert.deepEqual(s.hp, { hero: 1, demon: 25 });
   assert.equal(s.winner, null);
 });
 for (const hp of [3, 2])
@@ -226,8 +226,8 @@ test('blood moon reverses post-damage score without month twelve victory', () =>
   s.hp = { hero: 20, demon: 15 };
   s.score = 5;
   s = lockBoth(duel('HERO', 'DEMON', s));
-  assert.deepEqual(s.hp, { hero: 10, demon: 20 });
-  assert.equal(s.score, -10);
+  assert.deepEqual(s.hp, { hero: 10, demon: 25 });
+  assert.equal(s.score, -15);
   assert.equal(s.winner, null);
 });
 test('targeting, target selection and next month all preserve health-difference score', () => {

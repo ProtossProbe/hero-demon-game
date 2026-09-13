@@ -11,9 +11,21 @@ import {
 const heroRoles: Role[] = ['HERO', 'GOOD', 'EVIL'];
 const demonRoles: Role[] = ['DEMON', 'GOOD', 'EVIL'];
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
-export function RuleTable({ armageddon = false }: { armageddon?: boolean }) {
+export function RuleTable({
+  armageddon = false,
+  bloodMoon = false,
+}: {
+  armageddon?: boolean;
+  bloodMoon?: boolean;
+}) {
   const [selected, setSelected] = useState<[Role, Role]>(['HERO', 'DEMON']);
-  const baseRule = ruleFor(...selected);
+  const lookup = (h: Role, d: Role) => {
+    const rule = ruleFor(h, d);
+    return bloodMoon && h === 'HERO' && d === 'DEMON'
+      ? { ...rule, value: 10 }
+      : rule;
+  };
+  const baseRule = lookup(...selected);
   const duelEffect = (h: Role, d: Role) =>
     h === 'HERO' && d === 'DEMON'
       ? '双方 Boss 相遇：血量 ≤ 0 的一方获胜。'
@@ -28,7 +40,9 @@ export function RuleTable({ armageddon = false }: { armageddon?: boolean }) {
       ? duelEffect(h, d)
       : h === 'HERO'
         ? d === 'DEMON'
-          ? '魔王 −5 血'
+          ? bloodMoon
+            ? '勇者 +5 血 · 魔王 −5 血 · 互换'
+            : '魔王 −5 血'
           : d === 'GOOD'
             ? '无变化'
             : '勇者 −3 血 · 感化'
@@ -70,7 +84,7 @@ export function RuleTable({ armageddon = false }: { armageddon?: boolean }) {
             <TableRow key={h}>
               <TableHead scope="row">{names[h]}</TableHead>
               {demonRoles.map((d) => {
-                const r = armageddon ? { value: 0 } : ruleFor(h, d);
+                const r = armageddon ? { value: 0 } : lookup(h, d);
                 return (
                   <TableCell key={d}>
                     <button
@@ -111,8 +125,9 @@ export function RuleTable({ armageddon = false }: { armageddon?: boolean }) {
           出战，结算后结束本月。弃牌和未出牌重新洗回手牌，市民转换永久保留。
         </p>
         <p>
-          血月：上个月勇者与大魔王对决，则本月为血月。血月中魔王先受到伤害，双方存活才互换一次血量；未再次
-          Boss 对决则下月恢复普通月。
+          血月：上个月勇者与大魔王对决，则本月为血月。血月中勇者回复 5
+          血、魔王扣除 5 血，双方存活才互换一次血量；未再次 Boss
+          对决则下月恢复普通月。
         </p>
         <p>
           所有 8

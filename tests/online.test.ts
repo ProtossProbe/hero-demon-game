@@ -171,14 +171,16 @@ test('online blood moons sync through six boss duels and nonpositive health ente
     await act(d, { type: 'READY' });
     const expected = [
       { hero: 20, demon: 15 },
-      { hero: 10, demon: 20 },
-      { hero: 15, demon: 10 },
-      { hero: 5, demon: 15 },
-      { hero: 10, demon: 5 },
-      { hero: 10, demon: 0 },
+      { hero: 10, demon: 25 },
+      { hero: 20, demon: 15 },
+      { hero: 10, demon: 25 },
+      { hero: 20, demon: 15 },
+      { hero: 15, demon: 0 },
     ];
     for (let month = 1; month <= 6; month++) {
       assert.equal(v.state.bloodMoon, month > 1);
+      if (month === 6)
+        server.rooms.get(v.roomId)!.state.hp = { hero: 10, demon: 5 };
       await act(h, { type: 'PLAY', side: 'hero', cardId: 'hero-0' });
       await act(d, { type: 'PLAY', side: 'demon', cardId: 'demon-0' });
       await act(h, { type: 'LOCK', side: 'hero' });
@@ -208,7 +210,7 @@ test('online blood moons sync through six boss duels and nonpositive health ente
     assert.equal(v.phase, 'finished');
     assert.equal(v.state.winner, 'demon');
     assert.equal(v.state.winReason, 'armageddon');
-    assert.deepEqual(v.state.hp, { hero: 10, demon: 0 });
+    assert.deepEqual(v.state.hp, { hero: 15, demon: 0 });
     await act(h, { type: 'READY' });
     assert.equal(v.phase, 'finished');
     await act(d, { type: 'READY' });

@@ -98,7 +98,10 @@ export default function GameBoard({
         </div>
       </header>
       <div className="layout">
-        <RuleTable armageddon={!!state.armageddon} />
+        <RuleTable
+          armageddon={!!state.armageddon}
+          bloodMoon={state.bloodMoon}
+        />
         <main>
           <div className="status-bar">
             <div>
@@ -450,8 +453,8 @@ export default function GameBoard({
           )}
           <div className="assumption">
             月数无上限，净得分仅展示血量差，不用于判胜。全善／全恶直接获胜；否则任一方血量
-            ≤ 0 进入善恶决战。
-            血月先结算魔王伤害，双方存活才交换一次血量；进入决战后不再结算血量或阵营效果。
+            ≤ 0 进入善恶决战。 血月 Boss 对决先让勇者回复 5 血、魔王扣除 5
+            血，双方存活才交换一次血量；进入决战后不再结算血量或阵营效果。
           </div>
           <section className="history">
             <div className="section-title">
