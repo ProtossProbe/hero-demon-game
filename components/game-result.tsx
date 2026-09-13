@@ -34,8 +34,8 @@ export function GameResult({
       ? '所有市民均已感化为善良市民'
       : state.winReason === 'evil'
         ? '所有市民均已腐化为邪恶市民'
-        : state.winReason === 'health'
-          ? `${state.winner === 'hero' ? '大魔王' : '勇者'}血量降至 0 或以下`
+        : state.winReason === 'armageddon'
+          ? (state.last?.effects.join(' ') ?? '善恶决战结束')
           : null;
   const score = netScore(state);
   return (
@@ -46,13 +46,15 @@ export function GameResult({
       >
         <div className="result-inner">
           <p className="result-eyebrow">
-            {immediate ? '立即胜利 · 对局结束' : '十二个月结束 · 最终结算'}
+            {state.winReason === 'armageddon'
+              ? '善恶决战 · 对局结束'
+              : '阵营胜利 · 对局结束'}
           </p>
           <DialogTitle className="result-title">
             {draw ? '双方平局' : `${myName}${won ? '胜利' : '失败'}`}
           </DialogTitle>
           <DialogDescription className="result-description">
-            {immediate ?? '以双方最终血量之差判定胜负'}
+            {immediate ?? '对局已结束'}
             {draw ? '。双方血量相同。' : `。${winnerName}赢得本局。`}
           </DialogDescription>
           <div className="result-scores">

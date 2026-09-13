@@ -34,7 +34,7 @@ export const rules = [
     roles: ['HERO', 'DEMON'],
     value: 5,
     effect:
-      '魔王受到 5 点伤害；本月结束；下个月为血月。血月中先扣除魔王的伤害，再互换一次血量；伤害致死则立即结束，不互换。',
+      '魔王受到 5 点伤害；本月结束；下个月为血月。血月中先扣除魔王的伤害，再互换一次血量；血量降至 0 或以下则进入善恶决战，不互换。',
   },
   { roles: ['HERO', 'GOOD'], value: 0, effect: '无市民转换；本月结束。' },
   { roles: ['GOOD', 'GOOD'], value: 1, effect: '勇者回复 1 点血量。' },
@@ -63,17 +63,19 @@ export type State = {
   cards: Card[];
   month: number;
   turn: number;
-  totalMonths: number;
   hp: Record<Side, number>;
   /** 派生值：始终等于勇者血量减魔王血量。 */
   score: number;
   bloodMoon: boolean;
+  /** 血量归零后，需要抓到对方 Boss 的阵营。 */
+  armageddon: Side | null;
+  armageddonPending: boolean;
   bossDuelThisMonth: boolean;
   phase: 'playing' | 'targeting' | 'resolved' | 'finished';
   revealed: boolean;
   monthEnded: boolean;
   winner: Side | 'draw' | null;
-  winReason?: 'good' | 'evil' | 'months' | 'health';
+  winReason?: 'good' | 'evil' | 'armageddon';
   battle: Partial<Record<Side, string>>;
   locked: Record<Side, boolean>;
   changes: Record<Side, number>;
@@ -111,10 +113,11 @@ export function newGame(): State {
     ),
     month: 1,
     turn: 1,
-    totalMonths: 12,
     hp: { hero: 20, demon: 20 },
     score: 0,
     bloodMoon: false,
+    armageddon: null,
+    armageddonPending: false,
     bossDuelThisMonth: false,
     phase: 'playing',
     revealed: false,
@@ -137,21 +140,23 @@ export function netScore(s: Pick<State, 'hp'>): number {
 function finish(s: State) {
   s.score = netScore(s);
   const citizens = s.cards.filter((c) => !boss(c.role));
-  if (s.hp.hero <= 0 || s.hp.demon <= 0) {
-    s.winner = s.hp.hero <= 0 ? 'demon' : 'hero';
-    s.winReason = 'health';
-  }
-  if (!s.winner && citizens.every((c) => c.role === 'GOOD')) {
+  if (!s.armageddon && citizens.every((c) => c.role === 'GOOD')) {
     s.winner = 'hero';
     s.winReason = 'good';
   }
-  if (!s.winner && citizens.every((c) => c.role === 'EVIL')) {
+  if (!s.armageddon && citizens.every((c) => c.role === 'EVIL')) {
     s.winner = 'demon';
     s.winReason = 'evil';
   }
-  if (!s.winner && s.monthEnded && s.month === s.totalMonths) {
-    s.winner = s.score > 0 ? 'hero' : s.score < 0 ? 'demon' : 'draw';
-    s.winReason = 'months';
+  if (!s.winner && !s.armageddon && (s.hp.hero <= 0 || s.hp.demon <= 0)) {
+    s.armageddon = s.hp.hero <= 0 ? 'hero' : 'demon';
+    s.armageddonPending = true;
+    s.bloodMoon = false;
+    s.bossDuelThisMonth = false;
+    s.monthEnded = true;
+    s.last!.effects.push(
+      `善恶决战：${s.armageddon === 'hero' ? '勇者' : '魔王'}血量归零。双方确认后收回各自牌库的全部牌，开始决战；Boss 相遇则该方胜，Boss 对市民则另一方胜。`,
+    );
   }
   s.phase = s.winner ? 'finished' : 'resolved';
   s.history.unshift(
@@ -210,7 +215,8 @@ export function transition(input: State, command: Command): State {
   if (command.type === 'NEXT') {
     if (s.phase !== 'resolved') throw new Error('请先亮牌并完成结算');
     if (s.monthEnded) {
-      s.bloodMoon = s.bossDuelThisMonth;
+      s.bloodMoon = !s.armageddon && s.bossDuelThisMonth;
+      s.armageddonPending = false;
       s.bossDuelThisMonth = false;
       s.month++;
       s.turn = 1;
@@ -250,6 +256,40 @@ export function transition(input: State, command: Command): State {
     dr = d.role;
   const rule = ruleFor(hr, dr);
   s.revealed = true;
+
+  if (s.armageddon) {
+    const bothBosses = hr === 'HERO' && dr === 'DEMON';
+    const anyBoss = boss(hr) || boss(dr);
+    const challenger = s.armageddon;
+    s.last = {
+      roles: [hr, dr],
+      value: 0,
+      effects: [],
+      swapped: false,
+      swapCount: 0,
+    };
+    h.zone = d.zone = 'discard';
+    h.discardedTurn = d.discardedTurn = s.turn;
+    s.monthEnded = anyBoss;
+    if (anyBoss) {
+      s.winner = bothBosses
+        ? challenger
+        : challenger === 'hero'
+          ? 'demon'
+          : 'hero';
+      s.winReason = 'armageddon';
+      s.last.effects.push(
+        bothBosses
+          ? '善恶决战：双方 Boss 相遇，血量归零的一方成功捕获对方 Boss，获胜。'
+          : '善恶决战：Boss 对上市民，血量大于 0 的一方获胜。',
+      );
+    } else
+      s.last.effects.push(
+        '善恶决战：市民对市民，不结算血量、不转换善恶、不交换归属；继续出牌。',
+      );
+    finish(s);
+    return s;
+  }
 
   if (hr === 'HERO' && dr === 'EVIL') s.hp.hero -= 3;
   if (dr === 'DEMON' && (hr === 'GOOD' || hr === 'EVIL')) s.hp.demon += 1;

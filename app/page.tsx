@@ -59,7 +59,9 @@ export default function GameBoard({
   );
   const playing = state.phase === 'playing';
   return (
-    <div className={`app ${state.bloodMoon ? 'blood-moon' : ''}`}>
+    <div
+      className={`app ${state.armageddon ? 'armageddon' : state.bloodMoon ? 'blood-moon' : ''}`}
+    >
       <GameResult
         state={state}
         me={me}
@@ -96,14 +98,13 @@ export default function GameBoard({
         </div>
       </header>
       <div className="layout">
-        <RuleTable />
+        <RuleTable armageddon={!!state.armageddon} />
         <main>
           <div className="status-bar">
             <div>
               <small>当前月份</small>
               <b>
-                {String(state.month).padStart(2, '0')}{' '}
-                <span>/ {state.totalMonths} 月</span>
+                {String(state.month).padStart(2, '0')} <span>月</span>
               </b>
             </div>
             <div>
@@ -120,10 +121,24 @@ export default function GameBoard({
             </div>
             <div>
               <small>本月环境</small>
-              <b>{state.bloodMoon ? '血月' : '普通月'}</b>
+              <b>
+                {state.armageddon
+                  ? '善恶决战'
+                  : state.bloodMoon
+                    ? '血月'
+                    : '普通月'}
+              </b>
             </div>
           </div>
           <section className="arena">
+            {state.armageddon && (
+              <p className="armageddon-notice" role="status">
+                ARMAGEDDON · 善恶决战：
+                {state.armageddon === 'hero' ? '勇者' : '魔王'}需要抓到对方
+                Boss。双方 Boss 相遇，该方胜；任一 Boss
+                对市民，另一方胜。市民对市民不结算。
+              </p>
+            )}
             <div className="player-heading">
               <div>
                 <span className={`badge ${computer}`}>
@@ -140,6 +155,7 @@ export default function GameBoard({
               key={`opponent-${gameId}-${state.month}`}
               month={state.month}
               bloodMoon={state.bloodMoon}
+              armageddon={!!state.armageddon}
             />
             <div className="hand opponent">
               {counter(computer)}
@@ -300,9 +316,11 @@ export default function GameBoard({
                 >
                   {online?.nextReady
                     ? '已准备，等待对方'
-                    : state.monthEnded
-                      ? '进入下一个月 →'
-                      : '下一回合 →'}
+                    : state.armageddonPending
+                      ? '收回手牌，开始善恶决战 →'
+                      : state.monthEnded
+                        ? '进入下一个月 →'
+                        : '下一回合 →'}
                 </button>
               ) : state.phase === 'targeting' ? (
                 <span>等待魔王选择腐化目标，之后完成结算</span>
@@ -331,6 +349,7 @@ export default function GameBoard({
               key={`own-${gameId}-${state.month}`}
               month={state.month}
               bloodMoon={state.bloodMoon}
+              armageddon={!!state.armageddon}
             />
             <p className="hand-instruction">
               拖动手牌可排序；拖到战场可换牌，点击战场卡牌或拖回手牌可撤回。
@@ -430,10 +449,9 @@ export default function GameBoard({
             </p>
           )}
           <div className="assumption">
-            双方初始 20 血，任一方血量降至 0
-            或以下立即失败。净得分始终等于勇者血量 − 魔王血量。上个月双方 Boss
-            对决，本月即为血月；魔王先受伤害，存活时再互换一次血量。12
-            月后按勇者净得分判断胜负，市民转换永久保留。
+            月数无上限，净得分仅展示血量差，不用于判胜。全善／全恶直接获胜；否则任一方血量
+            ≤ 0 进入善恶决战。
+            血月先结算魔王伤害，双方存活才交换一次血量；进入决战后不再结算血量或阵营效果。
           </div>
           <section className="history">
             <div className="section-title">

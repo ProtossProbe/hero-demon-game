@@ -79,7 +79,7 @@ export function createGameServer(
   const http = createServer((req, res) => {
     if (req.url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, service: 'hero-demon', protocol: 3 }));
+      res.end(JSON.stringify({ ok: true, service: 'hero-demon', protocol: 4 }));
     } else {
       res.writeHead(404);
       res.end('Not found');

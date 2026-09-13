@@ -134,7 +134,7 @@ test('two players: hidden staging, automatic resolution, joint next, thumbnails 
   }
 });
 
-test('online blood moons sync through six boss duels and lethal damage ends before swapping', async () => {
+test('online blood moons sync through six boss duels and nonpositive health enters armageddon before swapping', async () => {
   const server = createGameServer();
   await new Promise<void>((r) => server.http.listen(0, '127.0.0.1', r));
   const port = (server.http.address() as { port: number }).port;
@@ -191,13 +191,29 @@ test('online blood moons sync through six boss duels and lethal damage ends befo
         await act(d, { type: 'NEXT' });
       }
     }
+    assert.equal(v.phase, 'active');
+    assert.equal(v.state.winner, null);
+    assert.equal(v.state.armageddon, 'demon');
+    assert.equal(v.state.armageddonPending, true);
+    await act(h, { type: 'NEXT' });
+    assert.equal(v.state.armageddonPending, true);
+    await act(d, { type: 'NEXT' });
+    assert.equal(v.state.armageddonPending, false);
+    assert.equal(v.state.month, 7);
+    assert.ok(v.state.cards.every((c) => c.zone === 'hand'));
+    await act(h, { type: 'PLAY', side: 'hero', cardId: 'hero-0' });
+    await act(d, { type: 'PLAY', side: 'demon', cardId: 'demon-0' });
+    await act(h, { type: 'LOCK', side: 'hero' });
+    await act(d, { type: 'LOCK', side: 'demon' });
     assert.equal(v.phase, 'finished');
-    assert.equal(v.state.winner, 'hero');
-    assert.equal(v.state.winReason, 'health');
+    assert.equal(v.state.winner, 'demon');
+    assert.equal(v.state.winReason, 'armageddon');
+    assert.deepEqual(v.state.hp, { hero: 10, demon: 0 });
     await act(h, { type: 'READY' });
     assert.equal(v.phase, 'finished');
     await act(d, { type: 'READY' });
     assert.equal(v.state.bloodMoon, false);
+    assert.equal(v.state.armageddon, null);
     assert.equal(v.state.month, 1);
     assert.deepEqual(v.state.hp, { hero: 20, demon: 20 });
   } finally {
@@ -258,6 +274,7 @@ test('both players exchange seats in same room, reset game and resume with origi
     assert.deepEqual(v.state.hp, { hero: 20, demon: 20 });
     assert.deepEqual(v.state.battle, {});
     assert.equal(v.state.bloodMoon, false);
+    assert.equal(v.state.armageddon, null);
     assert.deepEqual(v.swapReady, { hero: false, demon: false });
     assert.deepEqual(v.nextReady, { hero: false, demon: false });
     // Original demon now controls HERO even if the supplied side claims otherwise.
@@ -276,7 +293,7 @@ test('both players exchange seats in same room, reset game and resume with origi
     const room = server.rooms.get(roomId)!;
     room.state.phase = 'finished';
     room.state.winner = 'hero';
-    room.state.winReason = 'health';
+    room.state.winReason = 'armageddon';
     room.phase = 'finished';
     await act(d, { type: 'SWAP_SIDES' });
     assert.equal(v.phase, 'finished');

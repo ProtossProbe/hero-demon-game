@@ -825,3 +825,9 @@ body:has(.blood-moon) {background: #250e18;}
 .hand:has(.citizen-count) {padding-top:38px;}
 .citizen-count {position:absolute;top:7px;left:12px;font-size:15px;font-weight:700;letter-spacing:1px;}
 .count-good {color:#b5e3c6;}.count-evil {color:#f4a0b6;}
+
+body:has(.armageddon) {background:#261b09;}
+.app.armageddon {background:radial-gradient(ellipse at top,#b7802180,transparent 75%);}
+.armageddon .arena,.armageddon .rule-panel,.armageddon .status-bar {border-color:#d7ad52;background-color:#302617;}
+.armageddon .month-notice,.armageddon-notice {border:1px solid #d7ad52;background:#4a3816;color:#ffe4a0;padding:12px;border-radius:8px;}
+.armageddon .status-bar b {color:#ffe4a0;}

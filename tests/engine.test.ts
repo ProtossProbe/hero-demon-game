@@ -10,6 +10,7 @@ import {
   citizenCounts,
   type State,
   type Role,
+  type Side,
 } from '../lib/game/engine.ts';
 function lockBoth(s: State) {
   return transition(transition(s, { type: 'LOCK', side: 'hero' }), {
@@ -104,16 +105,17 @@ test('blood moon lasts whole month and expires after a non-duel month', () => {
   assert.equal(s.bloodMoon, false);
 });
 for (const hp of [5, 4])
-  test(`lethal demon damage at ${hp} HP skips blood moon swap`, () => {
+  test(`demon damage at ${hp} HP starts armageddon instead of swapping`, () => {
     let s = newGame();
     s.bloodMoon = true;
     s.hp = { hero: 20, demon: hp };
     s = lockBoth(duel('HERO', 'DEMON', s));
     assert.deepEqual(s.hp, { hero: 20, demon: hp - 5 });
-    assert.equal(s.winner, 'hero');
-    assert.equal(s.winReason, 'health');
+    assert.equal(s.winner, null);
+    assert.equal(s.armageddon, 'demon');
+    assert.equal(s.armageddonPending, true);
     assert.equal(s.last!.swapped, false);
-    assert.equal(s.phase, 'finished');
+    assert.equal(s.phase, 'resolved');
   });
 test('blood moon nonlethal demon damage happens before swap', () => {
   let s = newGame();
@@ -124,7 +126,7 @@ test('blood moon nonlethal demon damage happens before swap', () => {
   assert.equal(s.winner, null);
 });
 for (const hp of [3, 2])
-  test(`hero at ${hp} HP dies before all-good victory`, () => {
+  test(`all-good victory at hero ${hp} HP bypasses armageddon`, () => {
     let s = newGame();
     s.hp.hero = hp;
     s.cards.forEach((c) => {
@@ -132,8 +134,9 @@ for (const hp of [3, 2])
     });
     s.cards.find((c) => c.id === 'demon-3')!.role = 'EVIL';
     s = lockBoth(duel('HERO', 'EVIL', s));
-    assert.equal(s.winner, 'demon');
-    assert.equal(s.winReason, 'health');
+    assert.equal(s.winner, 'hero');
+    assert.equal(s.winReason, 'good');
+    assert.equal(s.armageddon, null);
     assert.equal(s.hp.hero, hp - 3);
   });
 test('good victory counts citizens in every zone', () => {
@@ -164,15 +167,20 @@ test('no good target skips targeting and wins for demon', () => {
   s = lockBoth(duel('EVIL', 'DEMON', s));
   assert.equal(s.winner, 'demon');
 });
-test('month 12 ends game by net score including tie', () => {
+test('month counter continues beyond twelve regardless of health difference', () => {
   for (const score of [-8, 0, 8]) {
     let s = newGame();
     s.month = 12;
     s.hp = { hero: 20 + score, demon: 20 };
     s.score = 999; // 旧缓存不得影响胜负。
     s = lockBoth(duel('HERO', 'GOOD', s));
-    assert.equal(s.winner, score < 0 ? 'demon' : score > 0 ? 'hero' : 'draw');
-    assert.throws(() => transition(s, { type: 'NEXT' }));
+    assert.equal(s.winner, null);
+    s = transition(s, { type: 'NEXT' });
+    assert.equal(s.month, 13);
+    s.month = 100;
+    s = transition(lockBoth(duel('HERO', 'GOOD', s)), { type: 'NEXT' });
+    assert.equal(s.month, 101);
+    assert.equal(s.winner, null);
   }
 });
 test('invalid commands cannot mutate input', () => {
@@ -184,12 +192,12 @@ test('invalid commands cannot mutate input', () => {
   );
   assert.deepEqual(s, copy);
 });
-test('100 complete random games preserve cards, bosses, hand limits and terminate', () => {
+test('100 random games preserve invariants over bounded simulations', () => {
   for (let i = 0; i < 100; i++) {
     let s: State = newGame();
     s.cards.forEach((c) => (c.zone = 'hand'));
     let n = 0;
-    while (!s.winner) {
+    while (!s.winner && n < 200) {
       for (const side of ['hero', 'demon'] as const) {
         const c = randomCard(s, side)!;
         s = transition(s, { type: 'PLAY', side, cardId: c.id });
@@ -205,13 +213,13 @@ test('100 complete random games preserve cards, bosses, hand limits and terminat
       assert.equal(s.cards.find((c) => c.role === 'HERO')!.owner, 'hero');
       assert.equal(s.cards.find((c) => c.role === 'DEMON')!.owner, 'demon');
       assert.ok(s.turn <= 5);
-      assert.ok(++n <= 60);
+      n++;
       if (!s.winner) s = transition(s, { type: 'NEXT' });
     }
   }
 });
 
-test('second boss duel reverses post-damage score and month 12 winner', () => {
+test('blood moon reverses post-damage score without month twelve victory', () => {
   let s = newGame();
   s.month = 12;
   s.bloodMoon = true;
@@ -220,7 +228,7 @@ test('second boss duel reverses post-damage score and month 12 winner', () => {
   s = lockBoth(duel('HERO', 'DEMON', s));
   assert.deepEqual(s.hp, { hero: 10, demon: 20 });
   assert.equal(s.score, -10);
-  assert.equal(s.winner, 'demon');
+  assert.equal(s.winner, null);
 });
 test('targeting, target selection and next month all preserve health-difference score', () => {
   let s = newGame();
@@ -327,4 +335,103 @@ test('citizen counts track transformed discards and ownership across months', ()
     hero: { good: 1, evil: 3 },
     demon: { good: 4, evil: 0 },
   });
+});
+
+for (const challenger of ['hero', 'demon'] as Side[]) {
+  for (const hp of [0, -1]) {
+    for (const [hr, dr] of [
+      ['HERO', 'DEMON'],
+      ['HERO', 'GOOD'],
+      ['HERO', 'EVIL'],
+      ['GOOD', 'DEMON'],
+      ['EVIL', 'DEMON'],
+    ] as [Role, Role][]) {
+      test(`armageddon ${challenger} at ${hp}: ${hr} vs ${dr}`, () => {
+        let s = newGame();
+        s.hp[challenger] = hp;
+        s.armageddon = challenger;
+        const before = structuredClone(s);
+        s = lockBoth(duel(hr, dr, s));
+        assert.equal(
+          s.winner,
+          hr === 'HERO' && dr === 'DEMON'
+            ? challenger
+            : challenger === 'hero'
+              ? 'demon'
+              : 'hero',
+        );
+        assert.equal(s.winReason, 'armageddon');
+        assert.equal(s.phase, 'finished');
+        assert.deepEqual(s.hp, before.hp);
+        assert.deepEqual(
+          s.cards.map((c) => [c.id, c.role, c.owner]),
+          before.cards.map((c) => [c.id, c.role, c.owner]),
+        );
+        assert.equal(s.last!.value, 0);
+        assert.equal(s.last!.swapped, false);
+      });
+    }
+  }
+}
+for (const [hr, dr] of [
+  ['GOOD', 'GOOD'],
+  ['GOOD', 'EVIL'],
+  ['EVIL', 'GOOD'],
+  ['EVIL', 'EVIL'],
+] as [Role, Role][]) {
+  test(`armageddon citizen effects frozen: ${hr} vs ${dr}`, () => {
+    let s = newGame();
+    s.hp.hero = -1;
+    s.armageddon = 'hero';
+    const before = structuredClone(s);
+    s = lockBoth(duel(hr, dr, s));
+    assert.equal(s.winner, null);
+    assert.equal(s.monthEnded, false);
+    assert.deepEqual(s.hp, before.hp);
+    assert.deepEqual(
+      s.cards.map((c) => [c.role, c.owner]),
+      before.cards.map((c) => [c.role, c.owner]),
+    );
+    s = transition(s, { type: 'NEXT' });
+    assert.equal(s.turn, 2);
+    assert.equal(s.armageddon, 'hero');
+    assert.equal(s.cards.filter((c) => c.zone === 'discard').length, 2);
+  });
+}
+test('entering armageddon restores all cards to current owners after confirmation', () => {
+  let s = lockBoth(duel('GOOD', 'EVIL'));
+  s = transition(s, { type: 'NEXT' });
+  s.hp.hero = 2;
+  s = lockBoth(duel('EVIL', 'EVIL', s));
+  assert.equal(s.armageddon, 'hero');
+  assert.equal(s.hp.hero, 0);
+  assert.equal(s.winner, null);
+  assert.equal(s.phase, 'resolved');
+  assert.equal(s.armageddonPending, true);
+  const ownership = s.cards.map((c) => [c.id, c.role, c.owner]).sort();
+  s = transition(s, { type: 'NEXT' });
+  assert.equal(s.armageddonPending, false);
+  assert.equal(s.armageddon, 'hero');
+  assert.equal(s.bloodMoon, false);
+  assert.equal(s.turn, 1);
+  assert.deepEqual(s.battle, {});
+  assert.deepEqual(s.locked, { hero: false, demon: false });
+  assert.ok(
+    s.cards.every((c) => c.zone === 'hand' && c.discardedTurn === undefined),
+  );
+  assert.deepEqual(
+    s.cards.map((c) => [c.id, c.role, c.owner]).sort(),
+    ownership,
+  );
+});
+test('all-evil victory bypasses armageddon even with nonpositive health', () => {
+  let s = newGame();
+  s.hp.hero = 0;
+  s.cards.forEach((c) => {
+    if (c.role === 'GOOD') c.role = 'EVIL';
+  });
+  s = lockBoth(duel('EVIL', 'DEMON', s));
+  assert.equal(s.winner, 'demon');
+  assert.equal(s.winReason, 'evil');
+  assert.equal(s.armageddon, null);
 });
