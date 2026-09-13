@@ -9,11 +9,15 @@ export type RoomView = {
   connected: Record<Side, boolean>;
   ready: Record<Side, boolean>;
   nextReady: Record<Side, boolean>;
+  swapReady: Record<Side, boolean>;
   state: State;
   citizenCounts: Record<Side, { good: number; evil: number }>;
   targetOptions: Card[];
 };
-export type RoomAction = { type: 'READY' } | { type: 'DRAW_ALL' } | Command;
+export type RoomAction =
+  | { type: 'READY' | 'SWAP_SIDES' }
+  | { type: 'DRAW_ALL' }
+  | Command;
 export type Reply =
   | { ok: true; view: RoomView; token?: string }
   | { ok: false; error: string };

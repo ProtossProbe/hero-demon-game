@@ -21,6 +21,7 @@ type Room = {
   phase: RoomView['phase'];
   ready: Record<Side, boolean>;
   nextReady: Record<Side, boolean>;
+  swapReady: Record<Side, boolean>;
   gameId: number;
   revision: number;
   touched: number;
@@ -55,6 +56,7 @@ export function project(room: Room, me: Side): RoomView {
     },
     ready: { ...room.ready },
     nextReady: { ...room.nextReady },
+    swapReady: { ...room.swapReady },
     state,
     citizenCounts: citizenCounts(room.state),
     targetOptions:
@@ -77,7 +79,7 @@ export function createGameServer(
   const http = createServer((req, res) => {
     if (req.url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, service: 'hero-demon', protocol: 2 }));
+      res.end(JSON.stringify({ ok: true, service: 'hero-demon', protocol: 3 }));
     } else {
       res.writeHead(404);
       res.end('Not found');
@@ -113,6 +115,17 @@ export function createGameServer(
     )
       throw new Error('请先创建或加入房间');
     return { room, side };
+  }
+  function startRound(room: Room) {
+    room.state = newGame();
+    room.state.cards.forEach((c) => {
+      c.zone = 'hand';
+    });
+    room.phase = 'active';
+    room.gameId++;
+    room.ready = flags();
+    room.nextReady = flags();
+    room.swapReady = flags();
   }
   function requireBoth(room: Room) {
     if (!room.players.hero?.socketId || !room.players.demon?.socketId)
@@ -157,6 +170,7 @@ export function createGameServer(
           phase: 'waiting',
           ready: flags(),
           nextReady: flags(),
+          swapReady: flags(),
           gameId: 0,
           revision: 0,
           touched: Date.now(),
@@ -223,19 +237,25 @@ export function createGameServer(
         const action = data?.action;
         if (!action || typeof action.type !== 'string')
           throw new Error('无效指令');
-        if (action.type === 'READY') {
+        if (action.type === 'SWAP_SIDES') {
+          room.swapReady[side] = true;
+          if (room.swapReady.hero && room.swapReady.demon) {
+            [room.players.hero, room.players.demon] = [
+              room.players.demon,
+              room.players.hero,
+            ];
+            for (const newSide of sides) {
+              const playerSocket = io.sockets.sockets.get(
+                room.players[newSide]!.socketId!,
+              );
+              if (playerSocket) playerSocket.data.side = newSide;
+            }
+            startRound(room);
+          }
+        } else if (action.type === 'READY') {
           if (room.phase === 'active') throw new Error('游戏正在进行');
           room.ready[side] = true;
-          if (room.ready.hero && room.ready.demon) {
-            room.state = newGame();
-            room.state.cards.forEach((c) => {
-              c.zone = 'hand';
-            });
-            room.phase = 'active';
-            room.gameId++;
-            room.ready = flags();
-            room.nextReady = flags();
-          }
+          if (room.ready.hero && room.ready.demon) startRound(room);
         } else {
           if (room.phase !== 'active') throw new Error('请等待双方准备');
           if (action.type === 'NEXT') {
@@ -279,7 +299,7 @@ export function createGameServer(
           }
         }
         publish(room);
-        return { ok: true, view: project(room, side) };
+        return { ok: true, view: project(room, socket.data.side as Side) };
       }),
     );
     socket.on('disconnect', () => {

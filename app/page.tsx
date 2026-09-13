@@ -7,6 +7,9 @@ import { RuleTable } from '../components/rule-table';
 import { useLocalGame } from '../hooks/use-local-game';
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 type Online = {
+  swapSides: () => void;
+  swapWaiting: boolean;
+  swapRequested: boolean;
   citizenCounts: ReturnType<typeof citizenCounts>;
   roomId: string;
   nextReady: boolean;
@@ -62,6 +65,9 @@ export default function GameBoard({
         me={me}
         onRestart={() => restart()}
         waiting={online?.rematchReady}
+        onSwap={online?.swapSides}
+        swapWaiting={online?.swapWaiting}
+        swapRequested={online?.swapRequested}
       />
       <header>
         <div>

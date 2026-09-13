@@ -54,3 +54,5 @@ GitHub Pages 来源设置为 GitHub Actions。仓库 Actions 变量 `SERVER_URL`
 后端：https://hero-demon-game.onrender.com
 
 双方手牌栏显示完整牌库的善/恶计数（含战场与弃牌），按转换后的类型与归属实时更新。在线卡牌采用 hero-0…hero-4 / demon-0…demon-4 的稳定编号；隐藏牌仍使用临时占位编号，避免暴露身份。
+
+在线房间提供“交换阵营”：双方同意后原房间保留，交换席位并重置为第 1 月、20 血和初始牌库。只一方申请不会中断游戏；支持游戏中和胜负窗口操作。重连凭证跟随玩家，交换后刷新仍恢复正确阵营。game:action 新增 SWAP_SIDES，room:state 包含 swapReady。

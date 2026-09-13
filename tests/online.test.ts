@@ -205,3 +205,88 @@ test('online blood moons sync through six boss duels and lethal damage ends befo
     server.close();
   }
 });
+
+test('both players exchange seats in same room, reset game and resume with original tokens', async () => {
+  const server = createGameServer();
+  await new Promise<void>((r) => server.http.listen(0, '127.0.0.1', r));
+  const port = (server.http.address() as { port: number }).port;
+  const clients: Socket[] = [];
+  async function connect() {
+    const c = io(`http://127.0.0.1:${port}`, {
+      transports: ['websocket'],
+      forceNew: true,
+    });
+    clients.push(c);
+    await new Promise<void>((r) => c.once('connect', () => r()));
+    return c;
+  }
+  async function req(c: Socket, event: string, data: unknown) {
+    const result = (await c.timeout(2000).emitWithAck(event, data)) as Reply;
+    if (!result.ok) throw Error(result.error);
+    return result;
+  }
+  let v: RoomView;
+  async function act(c: Socket, action: RoomAction) {
+    v = (
+      await req(c, 'game:action', {
+        gameId: v.gameId,
+        month: v.state.month,
+        turn: v.state.turn,
+        action,
+      })
+    ).view;
+  }
+  try {
+    const h = await connect(),
+      d = await connect();
+    const created = await req(h, 'room:create', { side: 'hero' });
+    v = created.view;
+    const roomId = v.roomId;
+    await req(d, 'room:join', { roomId });
+    await act(h, { type: 'READY' });
+    await act(d, { type: 'READY' });
+    await act(h, { type: 'PLAY', side: 'hero', cardId: 'hero-0' });
+    await act(h, { type: 'SWAP_SIDES' });
+    assert.equal(v.me, 'hero');
+    assert.equal(v.gameId, 1);
+    assert.equal(v.state.battle.hero, 'hero-0');
+    assert.equal(v.swapReady.hero, true);
+    await act(d, { type: 'SWAP_SIDES' });
+    assert.equal(v.me, 'hero');
+    assert.equal(v.roomId, roomId);
+    assert.equal(v.gameId, 2);
+    assert.deepEqual(v.state.hp, { hero: 20, demon: 20 });
+    assert.deepEqual(v.state.battle, {});
+    assert.equal(v.state.bloodMoon, false);
+    assert.deepEqual(v.swapReady, { hero: false, demon: false });
+    assert.deepEqual(v.nextReady, { hero: false, demon: false });
+    // Original demon now controls HERO even if the supplied side claims otherwise.
+    await act(d, { type: 'PLAY', side: 'demon', cardId: 'hero-0' });
+    assert.equal(v.state.battle.hero, 'hero-0');
+    await act(h, { type: 'PLAY', side: 'hero', cardId: 'demon-0' });
+    assert.equal(v.me, 'demon');
+    h.disconnect();
+    const reconnected = await connect();
+    v = (
+      await req(reconnected, 'room:resume', { roomId, token: created.token })
+    ).view;
+    assert.equal(v.me, 'demon');
+    assert.equal(v.state.battle.demon, 'demon-0');
+    // A finished game's overlay uses the same two-party exchange command.
+    const room = server.rooms.get(roomId)!;
+    room.state.phase = 'finished';
+    room.state.winner = 'hero';
+    room.state.winReason = 'health';
+    room.phase = 'finished';
+    await act(d, { type: 'SWAP_SIDES' });
+    assert.equal(v.phase, 'finished');
+    await act(reconnected, { type: 'SWAP_SIDES' });
+    assert.equal(v.me, 'hero');
+    assert.equal(v.phase, 'active');
+    assert.equal(v.gameId, 3);
+    assert.equal(v.state.winner, null);
+  } finally {
+    clients.forEach((c) => c.disconnect());
+    server.close();
+  }
+});

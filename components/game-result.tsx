@@ -12,11 +12,17 @@ export function GameResult({
   me,
   onRestart,
   waiting,
+  onSwap,
+  swapWaiting,
+  swapRequested,
 }: {
   state: State;
   me: Side;
   onRestart: () => void;
   waiting?: boolean;
+  onSwap?: () => void;
+  swapWaiting?: boolean;
+  swapRequested?: boolean;
 }) {
   const finished = state.phase === 'finished' && state.winner !== null;
   const draw = state.winner === 'draw';
@@ -69,6 +75,18 @@ export function GameResult({
           <p className="result-month">
             第 {state.month} 月 · 第 {state.turn} 回合
           </p>
+          {onSwap && (
+            <div>
+              {swapRequested && <p role="status">对方希望交换阵营并重新开局</p>}
+              <button
+                className="secondary"
+                disabled={swapWaiting}
+                onClick={onSwap}
+              >
+                {swapWaiting ? '已申请交换，等待对方' : '交换阵营'}
+              </button>
+            </div>
+          )}
           <button className="primary" onClick={onRestart} disabled={waiting}>
             {waiting ? '已准备，等待对方' : '准备开始下一局'}
           </button>

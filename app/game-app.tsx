@@ -100,6 +100,7 @@ function Online() {
       });
   }
   const ready = () => action({ type: 'READY' });
+  const swapSides = () => action({ type: 'SWAP_SIDES' });
   const both = !!view?.connected.hero && !!view?.connected.demon;
   return (
     <>
@@ -110,6 +111,17 @@ function Online() {
             <span>
               房间 {view.roomId} · 你是{view.me === 'hero' ? '勇者' : '魔王'}
             </span>
+            <button
+              className="secondary"
+              disabled={!connected || !both || view.swapReady?.[view.me]}
+              onClick={swapSides}
+              title="双方同意后，交换阵营并重新开始一局"
+            >
+              {view.swapReady?.[view.me] ? '已申请交换，等待对方' : '交换阵营'}
+            </button>
+            {view.swapReady?.[view.me === 'hero' ? 'demon' : 'hero'] && (
+              <span role="status">对方希望交换阵营并重新开局</span>
+            )}
             <span>{both ? '双方在线' : '等待对方连接，暂不能操作'}</span>
             <button
               className="secondary"
@@ -214,6 +226,10 @@ function Online() {
           }}
           online={{
             roomId: view.roomId,
+            swapSides,
+            swapWaiting: !!view.swapReady?.[view.me],
+            swapRequested:
+              !!view.swapReady?.[view.me === 'hero' ? 'demon' : 'hero'],
             nextReady: view.nextReady[view.me],
             rematchReady: view.ready[view.me],
             targetOptions: view.targetOptions,
