@@ -1,4 +1,12 @@
 export type Role = 'HERO' | 'DEMON' | 'GOOD' | 'EVIL';
+export const GAME_VERSION = '0.12';
+export type Environment = 'normal' | 'bright' | 'blood';
+export const environmentNames = {
+  normal: '普通月',
+  bright: '朗月',
+  blood: '血月',
+  armageddon: '善恶决战',
+} as const;
 export type Side = 'hero' | 'demon';
 export type Card = {
   id: string;
@@ -33,10 +41,13 @@ export const rules = [
   {
     roles: ['HERO', 'DEMON'],
     value: 5,
-    effect:
-      '魔王受到 5 点伤害；本月结束；下个月为血月。血月中勇者先回复 5 血、魔王扣除 5 血，再互换一次血量；血量降至 0 或以下则进入善恶决战，不互换。',
+    effect: '魔王受到 5 点伤害；本月结束，下个月为朗月。',
   },
-  { roles: ['HERO', 'GOOD'], value: 0, effect: '无市民转换；本月结束。' },
+  {
+    roles: ['HERO', 'GOOD'],
+    value: 0,
+    effect: '无血量或市民变化；本月结束，下个月为朗月。',
+  },
   { roles: ['GOOD', 'GOOD'], value: 1, effect: '勇者回复 1 点血量。' },
   {
     roles: ['DEMON', 'EVIL'],
@@ -50,14 +61,83 @@ export const rules = [
     effect: '勇者受到 2 点伤害；出战的两名邪恶市民均转化为善良市民。',
   },
 ] as const;
-export function ruleFor(a: Role, b: Role) {
+export function ruleFor(a: Role, b: Role, environment: Environment = 'normal') {
   const rule = rules.find(
     (r) =>
       (r.roles[0] === a && r.roles[1] === b) ||
       (r.roles[0] === b && r.roles[1] === a),
   );
   if (!rule) throw new Error('无效的角色组合');
-  return rule;
+  const has = (role: Role) => a === role || b === role;
+  const duel = has('HERO') && has('DEMON');
+  const heroEvil = has('HERO') && has('EVIL');
+  const evilPair = a === 'EVIL' && b === 'EVIL';
+  let heroDelta = heroEvil
+    ? -3
+    : evilPair
+      ? -2
+      : a === 'GOOD' && b === 'GOOD'
+        ? 1
+        : 0;
+  let demonDelta = duel
+    ? -5
+    : has('DEMON') && (has('GOOD') || has('EVIL'))
+      ? 1
+      : 0;
+  let effect: string = rule.effect;
+  if (environment === 'bright') {
+    if (duel) {
+      heroDelta = 5;
+      effect =
+        '朗月吸血：勇者回复 5 血、魔王扣除 5 血，不互换血量；下个月为血月。';
+    }
+    if (heroEvil) {
+      heroDelta = 0;
+      effect = '朗月守护：勇者不掉血；出战的邪恶市民转化为善良市民。';
+    }
+    if (evilPair) {
+      heroDelta = 0;
+      effect = '朗月守护：勇者不掉血；出战的两名邪恶市民均转化为善良市民。';
+    }
+    if (has('HERO') && has('GOOD'))
+      effect = '无血量或市民变化；本月结束，下个月为血月。';
+  }
+  if (environment === 'blood') {
+    if (duel) {
+      demonDelta = 0;
+      effect = '血月：不造成伤害、不回血，直接互换双方血量；下个月为普通月。';
+    }
+    if (heroEvil) {
+      heroDelta = -6;
+      effect = '血月：勇者受到 6 点伤害；邪恶市民不转化为善良。';
+    }
+    if (evilPair) {
+      heroDelta = -4;
+      effect = '血月：勇者受到 4 点伤害；两名邪恶市民保持邪恶。';
+    }
+    if (has('HERO') && has('GOOD'))
+      effect = '无血量或市民变化；本月结束，下个月为普通月。';
+  }
+  return {
+    ...rule,
+    value: heroDelta - demonDelta,
+    effect,
+    heroDelta,
+    demonDelta,
+    convertEvil: environment !== 'blood',
+    swapHealth: environment === 'blood' && duel,
+  };
+}
+export function nextEnvironment(
+  environment: Environment,
+  roles: Role[],
+): Environment {
+  if (environment === 'bright') return 'blood';
+  if (environment === 'blood') return 'normal';
+  return roles.includes('HERO') &&
+    (roles.includes('DEMON') || roles.includes('GOOD'))
+    ? 'bright'
+    : 'normal';
 }
 export type State = {
   cards: Card[];
@@ -66,11 +146,10 @@ export type State = {
   hp: Record<Side, number>;
   /** 派生值：始终等于勇者血量减魔王血量。 */
   score: number;
-  bloodMoon: boolean;
+  environment: Environment;
   /** 血量归零后，需要抓到对方 Boss 的阵营。 */
   armageddon: Side | null;
   armageddonPending: boolean;
-  bossDuelThisMonth: boolean;
   phase: 'playing' | 'targeting' | 'resolved' | 'finished';
   revealed: boolean;
   monthEnded: boolean;
@@ -80,13 +159,14 @@ export type State = {
   locked: Record<Side, boolean>;
   changes: Record<Side, number>;
   last: null | {
+    environment: Environment | 'armageddon';
     roles: Role[];
     value: number;
     effects: string[];
     swapped: boolean;
     swapCount: number;
   };
-  history: string[];
+  history: { environment: Environment | 'armageddon'; text: string }[];
 };
 export type Command =
   | { type: 'DRAW' | 'PLAY'; side: Side; cardId: string }
@@ -115,10 +195,9 @@ export function newGame(): State {
     turn: 1,
     hp: { hero: 20, demon: 20 },
     score: 0,
-    bloodMoon: false,
+    environment: 'normal',
     armageddon: null,
     armageddonPending: false,
-    bossDuelThisMonth: false,
     phase: 'playing',
     revealed: false,
     monthEnded: false,
@@ -151,17 +230,16 @@ function finish(s: State) {
   if (!s.winner && !s.armageddon && (s.hp.hero <= 0 || s.hp.demon <= 0)) {
     s.armageddon = s.hp.hero <= 0 ? 'hero' : 'demon';
     s.armageddonPending = true;
-    s.bloodMoon = false;
-    s.bossDuelThisMonth = false;
     s.monthEnded = true;
     s.last!.effects.push(
       `善恶决战：${s.armageddon === 'hero' ? '勇者' : '魔王'}血量归零。双方确认后收回各自牌库的全部牌，开始决战；Boss 相遇则该方胜，Boss 对市民则另一方胜。`,
     );
   }
   s.phase = s.winner ? 'finished' : 'resolved';
-  s.history.unshift(
-    `第 ${s.month} 月 · 回合 ${s.turn}：${s.last!.roles.map((r) => names[r]).join(' vs ')}，${s.last!.value > 0 ? '+' : ''}${s.last!.value}；${s.last!.effects.join(' ')}`,
-  );
+  s.history.unshift({
+    environment: s.last!.environment,
+    text: `第 ${s.month} 月 · 回合 ${s.turn}：${s.last!.roles.map((r) => names[r]).join(' vs ')}，${s.last!.value > 0 ? '+' : ''}${s.last!.value}；${s.last!.effects.join(' ')}`,
+  });
 }
 export function transition(input: State, command: Command): State {
   const s = structuredClone(input);
@@ -215,9 +293,10 @@ export function transition(input: State, command: Command): State {
   if (command.type === 'NEXT') {
     if (s.phase !== 'resolved') throw new Error('请先亮牌并完成结算');
     if (s.monthEnded) {
-      s.bloodMoon = !s.armageddon && s.bossDuelThisMonth;
+      s.environment = s.armageddon
+        ? 'normal'
+        : nextEnvironment(s.environment, s.last!.roles);
       s.armageddonPending = false;
-      s.bossDuelThisMonth = false;
       s.month++;
       s.turn = 1;
       // 洗牌只改变顺序，身份、归属和转换永久保留。
@@ -254,7 +333,7 @@ export function transition(input: State, command: Command): State {
   const d = s.cards.find((c) => c.id === s.battle.demon)!;
   const hr = h.role,
     dr = d.role;
-  const rule = ruleFor(hr, dr);
+  const rule = ruleFor(hr, dr, s.environment);
   s.revealed = true;
 
   if (s.armageddon) {
@@ -262,6 +341,7 @@ export function transition(input: State, command: Command): State {
     const anyBoss = boss(hr) || boss(dr);
     const challenger = s.armageddon;
     s.last = {
+      environment: 'armageddon',
       roles: [hr, dr],
       value: 0,
       effects: [],
@@ -291,17 +371,12 @@ export function transition(input: State, command: Command): State {
     return s;
   }
 
-  if (hr === 'HERO' && dr === 'EVIL') s.hp.hero -= 3;
-  if (dr === 'DEMON' && (hr === 'GOOD' || hr === 'EVIL')) s.hp.demon += 1;
-  if (hr === 'HERO' && dr === 'DEMON') {
-    if (s.bloodMoon) s.hp.hero += 5;
-    s.hp.demon -= 5;
-  }
-  if (hr === 'GOOD' && dr === 'GOOD') s.hp.hero += 1;
-  if (hr === 'EVIL' && dr === 'EVIL') s.hp.hero -= 2;
+  s.hp.hero += rule.heroDelta;
+  s.hp.demon += rule.demonDelta;
   s.last = {
+    environment: s.environment,
     roles: [hr, dr],
-    value: s.bloodMoon && hr === 'HERO' && dr === 'DEMON' ? 10 : rule.value,
+    value: rule.value,
     effects: [rule.effect],
     swapped: false,
     swapCount: 0,
@@ -309,23 +384,21 @@ export function transition(input: State, command: Command): State {
   const key = [hr, dr];
   if (key.includes('EVIL') && key.includes('GOOD'))
     [h.owner, d.owner] = [d.owner, h.owner];
-  if (hr === 'HERO' && dr === 'EVIL') d.role = 'GOOD';
+  if (rule.convertEvil && hr === 'HERO' && dr === 'EVIL') d.role = 'GOOD';
   if (dr === 'DEMON' && hr === 'GOOD') h.role = 'EVIL';
-  if (hr === 'EVIL' && dr === 'EVIL') h.role = d.role = 'GOOD';
+  if (rule.convertEvil && hr === 'EVIL' && dr === 'EVIL')
+    h.role = d.role = 'GOOD';
   h.zone = d.zone = 'discard';
   h.discardedTurn = d.discardedTurn = s.turn;
   s.monthEnded = boss(hr) || boss(dr) || s.turn === 5;
-  if (hr === 'HERO' && dr === 'DEMON') {
-    s.bossDuelThisMonth = true;
-    if (s.bloodMoon && s.hp.hero > 0 && s.hp.demon > 0) {
-      const afterDamage = { ...s.hp };
-      [s.hp.hero, s.hp.demon] = [s.hp.demon, s.hp.hero];
-      s.last.swapped = true;
-      s.last.swapCount = 1;
-      s.last.effects.push(
-        `血月：勇者先回复 5 血、魔王受到 5 点伤害（勇者 ${afterDamage.hero} / 魔王 ${afterDamage.demon}），再互换一次血量（勇者 ${s.hp.hero} / 魔王 ${s.hp.demon}）。`,
-      );
-    }
+  if (rule.swapHealth) {
+    const before = { ...s.hp };
+    [s.hp.hero, s.hp.demon] = [s.hp.demon, s.hp.hero];
+    s.last.swapped = true;
+    s.last.swapCount = 1;
+    s.last.effects.push(
+      `互换前：勇者 ${before.hero} / 魔王 ${before.demon}；互换后：勇者 ${s.hp.hero} / 魔王 ${s.hp.demon}。`,
+    );
   }
   // 先伤害/回血，再执行全部互换，最后计算净得分（包括等待选目标阶段）。
   s.score = netScore(s);

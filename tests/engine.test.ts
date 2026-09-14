@@ -10,6 +10,8 @@ import {
   citizenCounts,
   type State,
   type Role,
+  type Environment,
+  nextEnvironment,
   type Side,
 } from '../lib/game/engine.ts';
 function lockBoth(s: State) {
@@ -51,7 +53,11 @@ for (const [h, d, v, hp, dp] of [
 }
 test('all rules are symmetrical queries', () => {
   assert.equal(rules.length, 8);
-  for (const r of rules) assert.equal(ruleFor(r.roles[1], r.roles[0]), r);
+  for (const r of rules)
+    assert.deepEqual(
+      ruleFor(r.roles[1], r.roles[0]),
+      ruleFor(r.roles[0], r.roles[1]),
+    );
 });
 test('physical cards exchange owners and stay discarded', () => {
   const a = duel('EVIL', 'GOOD');
@@ -74,40 +80,110 @@ test('conversion persists across months', () => {
     true,
   );
 });
-test('blood moon starts next month and always swaps exactly once after damage', () => {
+test('environment cycle begins normal and follows normal bright blood normal', () => {
   let s = newGame();
-  s.hp = { hero: 30, demon: 40 };
-  for (let i = 1; i <= 4; i++) {
-    assert.equal(s.bloodMoon, i > 1);
-    const before = { ...s.hp };
+  for (const environment of [
+    'normal',
+    'bright',
+    'blood',
+    'normal',
+  ] as Environment[]) {
+    assert.equal(s.environment, environment);
     s = lockBoth(duel('HERO', 'DEMON', s));
-    assert.deepEqual(
-      s.hp,
-      i === 1
-        ? { hero: before.hero, demon: before.demon - 5 }
-        : { hero: before.demon - 5, demon: before.hero + 5 },
-    );
-    assert.equal(s.last!.swapCount, i === 1 ? 0 : 1);
-    assert.equal(s.score, s.hp.hero - s.hp.demon);
-    if (i < 4) s = transition(s, { type: 'NEXT' });
+    assert.equal(s.history[0].environment, environment);
+    s = transition(s, { type: 'NEXT' });
   }
 });
-test('blood moon lasts whole month and expires after a non-duel month', () => {
-  let s = transition(lockBoth(duel('HERO', 'DEMON')), { type: 'NEXT' });
-  s = lockBoth(duel('GOOD', 'GOOD', s));
-  assert.equal(s.bloodMoon, true);
-  assert.equal(s.last!.swapped, false);
-  s = transition(s, { type: 'NEXT' });
-  assert.equal(s.bloodMoon, true);
-  s = lockBoth(duel('HERO', 'GOOD', s));
-  assert.equal(s.bloodMoon, true);
-  s = transition(s, { type: 'NEXT' });
-  assert.equal(s.bloodMoon, false);
+for (const environment of ['normal', 'bright', 'blood'] as Environment[]) {
+  for (const [hr, dr] of [
+    ['HERO', 'DEMON'],
+    ['HERO', 'GOOD'],
+    ['HERO', 'EVIL'],
+    ['GOOD', 'DEMON'],
+    ['EVIL', 'DEMON'],
+  ] as [Role, Role][]) {
+    test(`month boundary ${environment}: ${hr} vs ${dr}`, () => {
+      let s = newGame();
+      s.environment = environment;
+      s = lockBoth(duel(hr, dr, s));
+      if (s.phase === 'targeting')
+        s = transition(s, { type: 'TARGET', cardId: targets(s)[0].id });
+      assert.equal(s.environment, environment);
+      s = transition(s, { type: 'NEXT' });
+      const expected =
+        environment === 'bright'
+          ? 'blood'
+          : environment === 'blood'
+            ? 'normal'
+            : hr === 'HERO' && (dr === 'DEMON' || dr === 'GOOD')
+              ? 'bright'
+              : 'normal';
+      assert.equal(s.environment, expected);
+    });
+  }
+  for (const [hr, dr, normalHp, brightHp, bloodHp] of [
+    ['HERO', 'DEMON', [20, 15], [25, 15], [20, 20]],
+    ['HERO', 'EVIL', [17, 20], [20, 20], [14, 20]],
+    ['EVIL', 'EVIL', [18, 20], [20, 20], [16, 20]],
+    ['GOOD', 'GOOD', [21, 20], [21, 20], [21, 20]],
+    ['GOOD', 'EVIL', [20, 20], [20, 20], [20, 20]],
+    ['EVIL', 'GOOD', [20, 20], [20, 20], [20, 20]],
+    ['GOOD', 'DEMON', [20, 21], [20, 21], [20, 21]],
+    ['EVIL', 'DEMON', [20, 21], [20, 21], [20, 21]],
+    ['HERO', 'GOOD', [20, 20], [20, 20], [20, 20]],
+  ] as [Role, Role, number[], number[], number[]][]) {
+    test(`0.12 ${environment} ${hr}/${dr}: hp and transformation`, () => {
+      let s = newGame();
+      s.environment = environment;
+      s = lockBoth(duel(hr, dr, s));
+      const hp =
+        environment === 'normal'
+          ? normalHp
+          : environment === 'bright'
+            ? brightHp
+            : bloodHp;
+      assert.deepEqual(s.hp, { hero: hp[0], demon: hp[1] });
+      if (dr === 'EVIL' && (hr === 'HERO' || hr === 'EVIL'))
+        assert.equal(
+          s.cards.find((c) => c.id === s.battle.demon)!.role,
+          environment === 'blood' ? 'EVIL' : 'GOOD',
+        );
+      if (hr === 'EVIL' && dr === 'EVIL')
+        assert.equal(
+          s.cards.find((c) => c.id === s.battle.hero)!.role,
+          environment === 'blood' ? 'EVIL' : 'GOOD',
+        );
+      if (hr === 'GOOD' && dr === 'DEMON')
+        assert.equal(s.cards.find((c) => c.id === s.battle.hero)!.role, 'EVIL');
+      if ((hr === 'GOOD' && dr === 'EVIL') || (hr === 'EVIL' && dr === 'GOOD'))
+        assert.equal(
+          s.cards.find((c) => c.id === s.battle.hero)!.owner,
+          'demon',
+        );
+      const rule = ruleFor(hr, dr, environment);
+      assert.equal(s.last!.value, rule.value);
+      assert.equal(s.score, s.hp.hero - s.hp.demon);
+      assert.deepEqual(ruleFor(dr, hr, environment), rule);
+      if (s.phase === 'resolved' && !s.monthEnded) {
+        s = transition(s, { type: 'NEXT' });
+        assert.equal(s.environment, environment);
+      }
+    });
+  }
+}
+test('blood boss duel only exchanges asymmetric hp, no damage or healing', () => {
+  let s = newGame();
+  s.environment = 'blood';
+  s.hp = { hero: 7, demon: 2 };
+  s = lockBoth(duel('HERO', 'DEMON', s));
+  assert.deepEqual(s.hp, { hero: 2, demon: 7 });
+  assert.equal(s.armageddon, null);
+  assert.equal(s.last!.swapCount, 1);
 });
 for (const hp of [5, 4])
   test(`demon damage at ${hp} HP starts armageddon instead of swapping`, () => {
     let s = newGame();
-    s.bloodMoon = true;
+    s.environment = 'bright';
     s.hp = { hero: 20, demon: hp };
     s = lockBoth(duel('HERO', 'DEMON', s));
     assert.deepEqual(s.hp, { hero: 25, demon: hp - 5 });
@@ -117,12 +193,12 @@ for (const hp of [5, 4])
     assert.equal(s.last!.swapped, false);
     assert.equal(s.phase, 'resolved');
   });
-test('blood moon nonlethal demon damage happens before swap', () => {
+test('bright moon absorbs health without swapping', () => {
   let s = newGame();
-  s.bloodMoon = true;
+  s.environment = 'bright';
   s.hp = { hero: 20, demon: 6 };
   s = lockBoth(duel('HERO', 'DEMON', s));
-  assert.deepEqual(s.hp, { hero: 1, demon: 25 });
+  assert.deepEqual(s.hp, { hero: 25, demon: 1 });
   assert.equal(s.winner, null);
 });
 for (const hp of [3, 2])
@@ -219,15 +295,15 @@ test('100 random games preserve invariants over bounded simulations', () => {
   }
 });
 
-test('blood moon reverses post-damage score without month twelve victory', () => {
+test('blood moon exchanges without month twelve victory', () => {
   let s = newGame();
   s.month = 12;
-  s.bloodMoon = true;
+  s.environment = 'blood';
   s.hp = { hero: 20, demon: 15 };
   s.score = 5;
   s = lockBoth(duel('HERO', 'DEMON', s));
-  assert.deepEqual(s.hp, { hero: 10, demon: 25 });
-  assert.equal(s.score, -15);
+  assert.deepEqual(s.hp, { hero: 15, demon: 20 });
+  assert.equal(s.score, -5);
   assert.equal(s.winner, null);
 });
 test('targeting, target selection and next month all preserve health-difference score', () => {
@@ -412,7 +488,7 @@ test('entering armageddon restores all cards to current owners after confirmatio
   s = transition(s, { type: 'NEXT' });
   assert.equal(s.armageddonPending, false);
   assert.equal(s.armageddon, 'hero');
-  assert.equal(s.bloodMoon, false);
+  assert.equal(s.environment, 'normal');
   assert.equal(s.turn, 1);
   assert.deepEqual(s.battle, {});
   assert.deepEqual(s.locked, { hero: false, demon: false });
@@ -434,4 +510,28 @@ test('all-evil victory bypasses armageddon even with nonpositive health', () => 
   assert.equal(s.winner, 'demon');
   assert.equal(s.winReason, 'evil');
   assert.equal(s.armageddon, null);
+});
+
+test('triggering armageddon preserves blood label in historical log', () => {
+  let s = newGame();
+  s.environment = 'blood';
+  s.hp.hero = 4;
+  s = lockBoth(duel('EVIL', 'EVIL', s));
+  assert.equal(s.armageddon, 'hero');
+  assert.equal(s.history[0].environment, 'blood');
+  s = transition(s, { type: 'NEXT' });
+  s = lockBoth(duel('GOOD', 'EVIL', s));
+  assert.equal(s.history[0].environment, 'armageddon');
+  assert.equal(s.history[1].environment, 'blood');
+});
+test('blood moon blocked conversion cannot award all-good victory', () => {
+  let s = newGame();
+  s.environment = 'blood';
+  s.cards.forEach((c) => {
+    if (c.role === 'EVIL') c.role = 'GOOD';
+  });
+  s.cards.find((c) => c.id === 'demon-3')!.role = 'EVIL';
+  s = lockBoth(duel('HERO', 'EVIL', s));
+  assert.equal(s.winner, null);
+  assert.equal(s.cards.find((c) => c.id === 'demon-3')!.role, 'EVIL');
 });

@@ -1,5 +1,11 @@
 import { useState } from 'react';
-import { names, ruleFor, type Role } from '../lib/game/engine';
+import {
+  names,
+  ruleFor,
+  environmentNames,
+  type Environment,
+  type Role,
+} from '../lib/game/engine';
 import {
   Table,
   TableHeader,
@@ -13,18 +19,13 @@ const demonRoles: Role[] = ['DEMON', 'GOOD', 'EVIL'];
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 export function RuleTable({
   armageddon = false,
-  bloodMoon = false,
+  environment = 'normal',
 }: {
   armageddon?: boolean;
-  bloodMoon?: boolean;
+  environment?: Environment;
 }) {
   const [selected, setSelected] = useState<[Role, Role]>(['HERO', 'DEMON']);
-  const lookup = (h: Role, d: Role) => {
-    const rule = ruleFor(h, d);
-    return bloodMoon && h === 'HERO' && d === 'DEMON'
-      ? { ...rule, value: 10 }
-      : rule;
-  };
+  const lookup = (h: Role, d: Role) => ruleFor(h, d, environment);
   const baseRule = lookup(...selected);
   const duelEffect = (h: Role, d: Role) =>
     h === 'HERO' && d === 'DEMON'
@@ -35,32 +36,29 @@ export function RuleTable({
   const rule = armageddon
     ? { ...baseRule, value: 0, effect: duelEffect(...selected) }
     : baseRule;
-  const brief = (h: Role, d: Role) =>
-    armageddon
-      ? duelEffect(h, d)
-      : h === 'HERO'
-        ? d === 'DEMON'
-          ? bloodMoon
-            ? '勇者 +5 血 · 魔王 −5 血 · 互换'
-            : '魔王 −5 血'
-          : d === 'GOOD'
-            ? '无变化'
-            : '勇者 −3 血 · 感化'
-        : h === 'GOOD'
-          ? d === 'DEMON'
-            ? '魔王 +1 血 · 腐化'
-            : d === 'GOOD'
-              ? '勇者 +1 血'
-              : '交换市民'
-          : d === 'DEMON'
-            ? '魔王 +1 血 · 指定'
-            : d === 'GOOD'
-              ? '交换市民'
-              : '勇者 −2 血 · 感化';
+  const brief = (h: Role, d: Role) => {
+    if (armageddon) return duelEffect(h, d);
+    const r = lookup(h, d);
+    if (r.swapHealth) return '直接互换血量';
+    if (h === 'HERO' && d === 'DEMON')
+      return r.heroDelta
+        ? `勇者 +${r.heroDelta}／魔王 ${r.demonDelta}`
+        : `魔王 ${r.demonDelta} 血`;
+    if ((h === 'HERO' && d === 'EVIL') || (h === 'EVIL' && d === 'EVIL'))
+      return `${r.heroDelta ? `勇者 ${r.heroDelta} 血` : '勇者免伤'} · ${r.convertEvil ? '感化' : '不感化'}`;
+    if (d === 'DEMON')
+      return `魔王 +${r.demonDelta} 血 · ${h === 'GOOD' ? '腐化' : '指定'}`;
+    if (h === 'GOOD' && d === 'GOOD') return `勇者 +${r.heroDelta} 血`;
+    if (h === 'HERO') return '无变化';
+    return '交换市民';
+  };
   return (
     <aside className="rule-panel">
       <div className="section-title">
-        <span>对战规则矩阵</span>
+        <span>
+          对战规则矩阵 ·{' '}
+          {armageddon ? '善恶决战' : environmentNames[environment]}
+        </span>
         <small>勇者方 × 魔王方</small>
       </div>
       <p className="muted">
@@ -125,9 +123,15 @@ export function RuleTable({
           出战，结算后结束本月。弃牌和未出牌重新洗回手牌，市民转换永久保留。
         </p>
         <p>
-          血月：上个月勇者与大魔王对决，则本月为血月。血月中勇者回复 5
-          血、魔王扣除 5 血，双方存活才互换一次血量；未再次 Boss
-          对决则下月恢复普通月。
+          普通月：沿用基础规则；以勇者对魔王或勇者对善良结束，下个月为朗月，否则仍为普通月。
+        </p>
+        <p>
+          朗月：勇者对魔王吸血（勇者 +5／魔王
+          −5），不互换；勇者对邪恶、邪恶对邪恶不掉血，感化照常。下个月必为血月。
+        </p>
+        <p>
+          血月：勇者对邪恶扣 6 血，邪恶对邪恶勇者扣 4
+          血；所有邪恶不转善，但善恶市民交换归属、善良被腐化照常。勇者对魔王直接互换血量，不造成伤害、不回血。下个月必为普通月。
         </p>
         <p>
           所有 8

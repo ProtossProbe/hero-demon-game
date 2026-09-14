@@ -1,7 +1,14 @@
 import { GameResult } from '../components/game-result';
 import { useHandOrder } from '../hooks/use-hand-order';
 import { MonthNotice } from '../components/month-notice';
-import { transition, targets, names, citizenCounts } from '../lib/game/engine';
+import {
+  transition,
+  targets,
+  names,
+  citizenCounts,
+  environmentNames,
+  GAME_VERSION,
+} from '../lib/game/engine';
 import { PlayingCard } from '../components/playing-card';
 import { RuleTable } from '../components/rule-table';
 import { useLocalGame } from '../hooks/use-local-game';
@@ -60,7 +67,7 @@ export default function GameBoard({
   const playing = state.phase === 'playing';
   return (
     <div
-      className={`app ${state.armageddon ? 'armageddon' : state.bloodMoon ? 'blood-moon' : ''}`}
+      className={`app ${state.armageddon ? 'armageddon' : state.environment === 'blood' ? 'blood-moon' : state.environment === 'bright' ? 'bright-moon' : ''}`}
     >
       <GameResult
         state={state}
@@ -74,7 +81,9 @@ export default function GameBoard({
       <header>
         <div>
           <small>大魔王 · 勇者 · 市民 VARIATION</small>
-          <h1>勇者斗大魔王</h1>
+          <h1>
+            勇者斗大魔王 <small>v{GAME_VERSION}</small>
+          </h1>
         </div>
         <div className="header-actions">
           <span className="mode">
@@ -100,7 +109,7 @@ export default function GameBoard({
       <div className="layout">
         <RuleTable
           armageddon={!!state.armageddon}
-          bloodMoon={state.bloodMoon}
+          environment={state.environment}
         />
         <main>
           <div className="status-bar">
@@ -127,9 +136,7 @@ export default function GameBoard({
               <b>
                 {state.armageddon
                   ? '善恶决战'
-                  : state.bloodMoon
-                    ? '血月'
-                    : '普通月'}
+                  : environmentNames[state.environment]}
               </b>
             </div>
           </div>
@@ -157,7 +164,7 @@ export default function GameBoard({
             <MonthNotice
               key={`opponent-${gameId}-${state.month}`}
               month={state.month}
-              bloodMoon={state.bloodMoon}
+              environment={state.environment}
               armageddon={!!state.armageddon}
             />
             <div className="hand opponent">
@@ -351,7 +358,7 @@ export default function GameBoard({
             <MonthNotice
               key={`own-${gameId}-${state.month}`}
               month={state.month}
-              bloodMoon={state.bloodMoon}
+              environment={state.environment}
               armageddon={!!state.armageddon}
             />
             <p className="hand-instruction">
@@ -453,8 +460,9 @@ export default function GameBoard({
           )}
           <div className="assumption">
             月数无上限，净得分仅展示血量差，不用于判胜。全善／全恶直接获胜；否则任一方血量
-            ≤ 0 进入善恶决战。 血月 Boss 对决先让勇者回复 5 血、魔王扣除 5
-            血，双方存活才交换一次血量；进入决战后不再结算血量或阵营效果。
+            ≤ 0
+            进入善恶决战。普通月符合条件进入朗月；朗月之后必为血月，血月之后必为普通月。朗月吸血与免伤；血月邪恶伤害加倍、禁止感化，Boss
+            对决只交换血量。进入决战后冻结血量及阵营效果。
           </div>
           <section className="history">
             <div className="section-title">
@@ -462,7 +470,16 @@ export default function GameBoard({
               <small>{state.history.length} 回合已结算</small>
             </div>
             {state.history.length ? (
-              state.history.map((line, i) => <p key={i}>{line}</p>)
+              state.history.map((entry, i) => (
+                <p key={i}>
+                  <strong
+                    className={`log-environment log-${entry.environment}`}
+                  >
+                    【{environmentNames[entry.environment]}】
+                  </strong>
+                  {entry.text}
+                </p>
+              ))
             ) : (
               <p className="muted">双方锁定后，结算记录将显示在这里。</p>
             )}

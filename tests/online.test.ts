@@ -134,7 +134,7 @@ test('two players: hidden staging, automatic resolution, joint next, thumbnails 
   }
 });
 
-test('online blood moons sync through six boss duels and nonpositive health enters armageddon before swapping', async () => {
+test('online three environments synchronize and preserve armageddon', async () => {
   const server = createGameServer();
   await new Promise<void>((r) => server.http.listen(0, '127.0.0.1', r));
   const port = (server.http.address() as { port: number }).port;
@@ -171,28 +171,39 @@ test('online blood moons sync through six boss duels and nonpositive health ente
     await act(d, { type: 'READY' });
     const expected = [
       { hero: 20, demon: 15 },
+      { hero: 25, demon: 10 },
       { hero: 10, demon: 25 },
-      { hero: 20, demon: 15 },
-      { hero: 10, demon: 25 },
-      { hero: 20, demon: 15 },
-      { hero: 15, demon: 0 },
+      { hero: 10, demon: 20 },
+      { hero: 15, demon: 15 },
+      { hero: 15, demon: 15 },
     ];
     for (let month = 1; month <= 6; month++) {
-      assert.equal(v.state.bloodMoon, month > 1);
-      if (month === 6)
-        server.rooms.get(v.roomId)!.state.hp = { hero: 10, demon: 5 };
+      assert.equal(
+        v.state.environment,
+        ['normal', 'bright', 'blood'][(month - 1) % 3],
+      );
+
       await act(h, { type: 'PLAY', side: 'hero', cardId: 'hero-0' });
       await act(d, { type: 'PLAY', side: 'demon', cardId: 'demon-0' });
       await act(h, { type: 'LOCK', side: 'hero' });
       await act(d, { type: 'LOCK', side: 'demon' });
       assert.deepEqual(v.state.hp, expected[month - 1]);
-      assert.equal(v.state.last!.swapCount, month > 1 && month < 6 ? 1 : 0);
+      assert.equal(v.state.last!.swapCount, month % 3 === 0 ? 1 : 0);
       if (month < 6) {
         await act(h, { type: 'NEXT' });
         assert.equal(v.state.month, month);
         await act(d, { type: 'NEXT' });
       }
     }
+    await act(h, { type: 'NEXT' });
+    await act(d, { type: 'NEXT' });
+    const room = server.rooms.get(v.roomId)!;
+    room.state.environment = 'bright';
+    room.state.hp = { hero: 10, demon: 5 };
+    await act(h, { type: 'PLAY', side: 'hero', cardId: 'hero-0' });
+    await act(d, { type: 'PLAY', side: 'demon', cardId: 'demon-0' });
+    await act(h, { type: 'LOCK', side: 'hero' });
+    await act(d, { type: 'LOCK', side: 'demon' });
     assert.equal(v.phase, 'active');
     assert.equal(v.state.winner, null);
     assert.equal(v.state.armageddon, 'demon');
@@ -201,7 +212,7 @@ test('online blood moons sync through six boss duels and nonpositive health ente
     assert.equal(v.state.armageddonPending, true);
     await act(d, { type: 'NEXT' });
     assert.equal(v.state.armageddonPending, false);
-    assert.equal(v.state.month, 7);
+    assert.equal(v.state.month, 8);
     assert.ok(v.state.cards.every((c) => c.zone === 'hand'));
     await act(h, { type: 'PLAY', side: 'hero', cardId: 'hero-0' });
     await act(d, { type: 'PLAY', side: 'demon', cardId: 'demon-0' });
@@ -214,7 +225,7 @@ test('online blood moons sync through six boss duels and nonpositive health ente
     await act(h, { type: 'READY' });
     assert.equal(v.phase, 'finished');
     await act(d, { type: 'READY' });
-    assert.equal(v.state.bloodMoon, false);
+    assert.equal(v.state.environment, 'normal');
     assert.equal(v.state.armageddon, null);
     assert.equal(v.state.month, 1);
     assert.deepEqual(v.state.hp, { hero: 20, demon: 20 });
@@ -275,7 +286,7 @@ test('both players exchange seats in same room, reset game and resume with origi
     assert.equal(v.gameId, 2);
     assert.deepEqual(v.state.hp, { hero: 20, demon: 20 });
     assert.deepEqual(v.state.battle, {});
-    assert.equal(v.state.bloodMoon, false);
+    assert.equal(v.state.environment, 'normal');
     assert.equal(v.state.armageddon, null);
     assert.deepEqual(v.swapReady, { hero: false, demon: false });
     assert.deepEqual(v.nextReady, { hero: false, demon: false });

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
+import { environmentNames, type Environment } from '../lib/game/engine';
 export function MonthNotice({
   month,
-  bloodMoon = false,
+  environment = 'normal',
   armageddon = false,
 }: {
   month: number;
-  bloodMoon?: boolean;
+  environment?: Environment;
   armageddon?: boolean;
 }) {
   const [visible, setVisible] = useState(true);
@@ -16,8 +17,8 @@ export function MonthNotice({
   return visible ? (
     <div className="month-notice" role="status">
       <strong>
-        现在是 {month} 月
-        {armageddon ? ' · 善恶决战' : bloodMoon ? ' · 血月' : ''}
+        现在是 {month} 月 ·{' '}
+        {armageddon ? '善恶决战' : environmentNames[environment]}
       </strong>
       <span>新的一月开始，请准备出牌</span>
     </div>

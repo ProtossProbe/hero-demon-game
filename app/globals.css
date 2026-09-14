@@ -831,3 +831,9 @@ body:has(.armageddon) {background:#261b09;}
 .armageddon .arena,.armageddon .rule-panel,.armageddon .status-bar {border-color:#d7ad52;background-color:#302617;}
 .armageddon .month-notice,.armageddon-notice {border:1px solid #d7ad52;background:#4a3816;color:#ffe4a0;padding:12px;border-radius:8px;}
 .armageddon .status-bar b {color:#ffe4a0;}
+
+body:has(.bright-moon) {background:#111f30;}
+.app.bright-moon {background:radial-gradient(ellipse at top,#9bbddd55,transparent 75%);}
+.bright-moon .arena,.bright-moon .rule-panel,.bright-moon .status-bar {border-color:#9bbddd;background-color:#1b2d40;}
+.bright-moon .month-notice {background:#304966;border-color:#cce7ff;color:#e8f4ff;}
+.log-environment {font-weight:700;}.log-normal{color:#b9c2d2;}.log-bright{color:#c7e8ff;}.log-blood{color:#ff8195;}.log-armageddon{color:#ffe4a0;}
